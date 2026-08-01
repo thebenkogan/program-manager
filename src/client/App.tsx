@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CoachData, View } from './types'
 import { Dashboard } from './Dashboard'
-import { ClientPage } from './ClientPage'
 import { ProgramPage } from './ProgramPage'
 
 export function App() {
@@ -39,28 +38,21 @@ export function App() {
   }
 
   if (error) {
-    return <div className="mx-auto max-w-3xl p-8 text-red-400">{error}</div>
+    return <div className="mx-auto max-w-3xl px-6 py-14 text-red-400">{error}</div>
   }
   if (!data) {
-    return <div className="mx-auto max-w-3xl p-8 text-zinc-400">Loading…</div>
-  }
-
-  if (view.kind === 'client') {
-    const client = data.clients.find((c) => c.id === view.id)
-    if (!client) return <Missing text="Client not found" />
-    return <ClientPage data={data} client={client} navigate={setView} />
+    return <div className="mx-auto max-w-3xl px-6 py-14 text-zinc-400">Loading…</div>
   }
 
   if (view.kind === 'program') {
     const program = data.programs.find((p) => p.id === view.id)
     if (!program) return <Missing text="Program not found" />
-    const client = data.clients.find((c) => c.id === program.clientId)
-    return <ProgramPage data={data} program={program} client={client} navigate={setView} action={action} refresh={refresh} />
+    return <ProgramPage program={program} navigate={setView} action={action} refresh={refresh} />
   }
 
   return <Dashboard data={data} navigate={setView} />
 }
 
 function Missing({ text }: { text: string }) {
-  return <div className="mx-auto max-w-3xl p-8 text-zinc-500">{text}</div>
+  return <div className="mx-auto max-w-3xl px-6 py-14 text-zinc-500">{text}</div>
 }

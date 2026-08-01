@@ -8,8 +8,8 @@ const DATA = path.join(ROOT, 'data')
 const PROGRAMS = path.join(DATA, 'programs')
 
 const clients: Client[] = [
-  { id: 'ben', name: 'Ben', email: null, notes: null, createdAt: new Date().toISOString() },
-  { id: 'andi', name: 'Andi', email: null, notes: null, createdAt: new Date().toISOString() },
+  { id: 'ben', name: 'Ben', notes: null, createdAt: new Date().toISOString() },
+  { id: 'andi', name: 'Andi', notes: null, createdAt: new Date().toISOString() },
 ]
 
 const lifts = {

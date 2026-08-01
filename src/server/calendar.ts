@@ -1,6 +1,6 @@
 import { google } from 'googleapis'
-import type { Exercise, ProgramDocument, Session, SyncState } from '../shared/types'
-import { docHash } from './hash'
+import type { Exercise, ProgramDocument, Session, SyncState } from '../shared/types.ts'
+import { docHash } from './hash.ts'
 
 let cachedClient: ReturnType<typeof google.calendar> | null = null
 
@@ -75,11 +75,7 @@ async function insertEvents(
   return events
 }
 
-async function createCalendarAndShare(
-  client: ReturnType<typeof google.calendar>,
-  doc: ProgramDocument,
-  email: string,
-): Promise<{ calendarId: string; addLink: string }> {
+async function createCalendar(client: ReturnType<typeof google.calendar>, doc: ProgramDocument) {
   const cal = await client.calendars.insert({
     requestBody: {
       summary: doc.name,
@@ -87,36 +83,38 @@ async function createCalendarAndShare(
     },
   })
   const calendarId = cal.data.id!
-  await client.acl.insert({
-    calendarId,
-    requestBody: { role: 'reader', scope: { type: 'user', value: email } },
-  })
   return { calendarId, addLink: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(calendarId)}` }
 }
 
-export async function syncProgram(doc: ProgramDocument, clientEmail: string): Promise<SyncState> {
+async function makePublic(client: ReturnType<typeof google.calendar>, calendarId: string) {
+  const { data } = await client.acl.list({ calendarId })
+  const hasPublic = (data.items ?? []).some((rule) => rule.scope?.type === 'default')
+  if (!hasPublic) {
+    await client.acl.insert({
+      calendarId,
+      requestBody: { role: 'reader', scope: { type: 'default' } },
+    })
+  }
+}
+
+export async function syncProgram(doc: ProgramDocument): Promise<SyncState> {
   const client = getCalendarClient()
-  const { calendarId, addLink } = await createCalendarAndShare(client, doc, clientEmail)
+  const { calendarId, addLink } = await createCalendar(client, doc)
+  await makePublic(client, calendarId)
   const events = await insertEvents(client, calendarId, doc)
   return {
     syncedHash: docHash(doc),
     syncedAt: new Date().toISOString(),
     calendarId,
-    sharedWithEmail: clientEmail,
     addLink,
     events,
   }
 }
 
-export async function resyncProgram(
-  doc: ProgramDocument,
-  clientEmail: string,
-  prev: SyncState | null,
-): Promise<SyncState> {
+export async function resyncProgram(doc: ProgramDocument, prev: SyncState | null): Promise<SyncState> {
   const client = getCalendarClient()
 
   let calendarId = prev?.calendarId
-  let sharedWithEmail = prev?.sharedWithEmail
 
   if (calendarId) {
     try {
@@ -127,21 +125,11 @@ export async function resyncProgram(
   }
 
   if (!calendarId) {
-    const created = await createCalendarAndShare(client, doc, clientEmail)
+    const created = await createCalendar(client, doc)
     calendarId = created.calendarId
-    sharedWithEmail = clientEmail
-  } else if (sharedWithEmail && sharedWithEmail !== clientEmail) {
-    try {
-      await client.acl.delete({ calendarId, ruleId: `user:${sharedWithEmail}` })
-    } catch {
-      // old share rule may already be gone
-    }
-    await client.acl.insert({
-      calendarId,
-      requestBody: { role: 'reader', scope: { type: 'user', value: clientEmail } },
-    })
-    sharedWithEmail = clientEmail
   }
+
+  await makePublic(client, calendarId)
 
   let pageToken: string | undefined
   do {
@@ -166,7 +154,6 @@ export async function resyncProgram(
     syncedHash: docHash(doc),
     syncedAt: new Date().toISOString(),
     calendarId,
-    sharedWithEmail: sharedWithEmail ?? clientEmail,
     addLink: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(calendarId)}`,
     events,
   }

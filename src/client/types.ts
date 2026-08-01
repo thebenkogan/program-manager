@@ -26,7 +26,6 @@ export interface CoachData {
 
 export type View =
   | { kind: 'dashboard' }
-  | { kind: 'client'; id: string }
   | { kind: 'program'; id: string }
 
 export type { Client, ProgramFile, SyncState, FileStatus, ParsedDiff, VersionInfo, SyncStatus }

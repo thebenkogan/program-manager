@@ -1,11 +1,10 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import { loadEnv } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ProgramFile, SyncState } from '../shared/types'
-import { validateProgram } from '../shared/validate'
-import { docHash } from './hash'
+import type { ProgramFile, SyncState } from '../shared/types.ts'
+import { validateProgram } from '../shared/validate.ts'
+import { docHash } from './hash.ts'
 import {
-  getClient,
   getProgramFile,
   getSyncState,
   listClients,
@@ -14,7 +13,7 @@ import {
   writeSyncState,
   deleteProgramData,
   ROOT,
-} from './store'
+} from './store.ts'
 import {
   dataFileStatus,
   programDiff,
@@ -22,8 +21,8 @@ import {
   discardFile,
   deleteTrackedProgram,
   programHistory,
-  programVersionDiff,
-} from './git'
+  programDocAtRef,
+} from './git.ts'
 
 type SsrLoader = (id: string) => Promise<unknown>
 
@@ -63,6 +62,10 @@ function programSummary(env: ProgramFile): ProgramSummary {
   const currentHash = docHash(env.doc)
   const errors = validateProgram(env.doc)
   const diff = programDiff(env.id)
+  let syncStatus: 'none' | 'synced' | 'changed'
+  if (!sync) syncStatus = 'none'
+  else if (diff !== null) syncStatus = 'synced'
+  else syncStatus = sync.syncedHash === currentHash ? 'synced' : 'changed'
   return {
     ...env,
     docHash: currentHash,
@@ -70,7 +73,7 @@ function programSummary(env: ProgramFile): ProgramSummary {
     valid: errors.length === 0,
     hasPendingDiff: diff !== null,
     pendingStats: diff?.stats ?? null,
-    syncStatus: sync ? (sync.syncedHash === currentHash ? 'synced' : 'changed') : 'none',
+    syncStatus,
     sync,
   }
 }
@@ -101,7 +104,13 @@ export function coachData(): Plugin {
 
       const diffM = m(/^\/__program\/([^/]+)\/diff$/)
       if (req.method === 'GET' && diffM) {
-        return send(res, 200, { id: diffM[1], diff: programDiff(diffM[1]) })
+        const id = diffM[1]
+        const rel = programRelPath(id)
+        return send(res, 200, {
+          id,
+          oldDoc: programDocAtRef(rel, 'HEAD'),
+          newDoc: getProgramFile(id)?.doc ?? null,
+        })
       }
 
       const historyM = m(/^\/__program\/([^/]+)\/history$/)
@@ -111,10 +120,14 @@ export function coachData(): Plugin {
 
       const versionM = m(/^\/__program\/([^/]+)\/version\/([0-9a-f]+)$/)
       if (req.method === 'GET' && versionM) {
+        const id = versionM[1]
+        const hash = versionM[2]
+        const rel = programRelPath(id)
         return send(res, 200, {
-          id: versionM[1],
-          hash: versionM[2],
-          diff: programVersionDiff(versionM[1], versionM[2]),
+          id,
+          hash,
+          oldDoc: programDocAtRef(rel, `${hash}^`),
+          newDoc: programDocAtRef(rel, hash),
         })
       }
 
@@ -160,15 +173,9 @@ export function coachData(): Plugin {
         if (!env) return send(res, 404, { error: 'Program not found' })
         const errs = validateProgram(env.doc)
         if (errs.length > 0) return send(res, 400, { error: `Invalid program: ${errs.join('; ')}` })
-        const client = getClient(env.clientId)
-        if (!client?.email) {
-          return send(res, 400, {
-            error: `No email set for client "${client?.name ?? env.clientId}". Ask your assistant to set it in data/clients.json.`,
-          })
-        }
         if (getSyncState(id)) return send(res, 400, { error: 'Already synced — use Resync.' })
         const cal = await loadCalendar()
-        const state = await cal.syncProgram(env.doc, client.email)
+        const state = await cal.syncProgram(env.doc)
         writeSyncState(id, state)
         return send(res, 200, programSummary(getProgramFile(id)!))
       }
@@ -180,14 +187,9 @@ export function coachData(): Plugin {
         if (!env) return send(res, 404, { error: 'Program not found' })
         const errs = validateProgram(env.doc)
         if (errs.length > 0) return send(res, 400, { error: `Invalid program: ${errs.join('; ')}` })
-        const client = getClient(env.clientId)
-        if (!client?.email) {
-          return send(res, 400, {
-            error: `No email set for client "${client?.name ?? env.clientId}". Ask your assistant to set it in data/clients.json.`,
-          })
-        }
+        if (programDiff(id)) return send(res, 400, { error: 'Commit the proposed changes before resyncing.' })
         const cal = await loadCalendar()
-        const state = await cal.resyncProgram(env.doc, client.email, getSyncState(id))
+        const state = await cal.resyncProgram(env.doc, getSyncState(id))
         writeSyncState(id, state)
         return send(res, 200, programSummary(getProgramFile(id)!))
       }
@@ -198,9 +200,9 @@ export function coachData(): Plugin {
     }
   }
 
-  async function loadCalendar(): Promise<typeof import('./calendar')> {
+  async function loadCalendar(): Promise<typeof import('./calendar.ts')> {
     if (!ssrLoader) throw new Error('Calendar backend unavailable')
-    return (await ssrLoader('/src/server/calendar.ts')) as typeof import('./calendar')
+    return (await ssrLoader('/src/server/calendar.ts')) as typeof import('./calendar.ts')
   }
 
   return {

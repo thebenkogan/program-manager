@@ -1,33 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Client, CoachData, ParsedDiff, ProgramSummary, View, VersionInfo } from './types'
-import { Button, Card, DiffViewer, SyncBadge } from './components'
+import type { ProgramDocument } from '../shared/types'
+import type { ProgramSummary, View, VersionInfo } from './types'
+import { Button, Card, SyncBadge } from './components'
+import { ProgramDiff } from './ProgramDiff'
 import { formatDateTime, fullDate } from './format'
 
 interface Props {
-  data: CoachData
   program: ProgramSummary
-  client: Client | undefined
   navigate: (v: View) => void
   action: (path: string, body?: unknown) => Promise<unknown>
   refresh: () => Promise<void>
 }
 
-export function ProgramPage({ program, client, navigate, action, refresh }: Props) {
-  const [diff, setDiff] = useState<ParsedDiff | null>(null)
+interface DocPair {
+  oldDoc: ProgramDocument | null
+  newDoc: ProgramDocument | null
+}
+
+export function ProgramPage({ program, navigate, action, refresh }: Props) {
+  const [propDiff, setPropDiff] = useState<DocPair | null>(null)
   const [history, setHistory] = useState<VersionInfo[]>([])
-  const [versionDiff, setVersionDiff] = useState<{ hash: string; diff: ParsedDiff | null } | null>(null)
+  const [versionDiff, setVersionDiff] = useState<DocPair & { hash: string } | null>(null)
   const [message, setMessage] = useState(`Adjust ${program.doc.name}`)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (program.hasPendingDiff) {
       fetch(`/__program/${program.id}/diff`)
-        .then((r) => r.json() as Promise<{ diff: ParsedDiff | null }>)
-        .then((j) => setDiff(j.diff))
+        .then((r) => r.json() as Promise<DocPair>)
+        .then((j) => setPropDiff(j))
         .catch(() => {})
+    } else {
+      setPropDiff(null)
     }
     fetch(`/__program/${program.id}/history`)
       .then((r) => r.json() as Promise<{ versions: VersionInfo[] }>)
@@ -52,7 +60,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
   function sync() {
     void run('syncing', async () => {
       await action(`/__sync/${program.id}`)
-      setNotice('Synced to Google Calendar — your client can add it to their calendar.')
+      setNotice('Synced. Copy the share link below and send it to the client.')
     })
   }
 
@@ -66,15 +74,15 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
   function apply() {
     void run('applying', async () => {
       await action(`/__program/${program.id}/apply`, { message })
-      setDiff(null)
-      setNotice(`Applied. New version committed.`)
+      setPropDiff(null)
+      setNotice('Applied. New version committed.')
     })
   }
 
   function discard() {
     void run('discarding', async () => {
       await action(`/__program/${program.id}/discard`)
-      setDiff(null)
+      setPropDiff(null)
       setNotice('Changes discarded.')
     })
   }
@@ -82,17 +90,32 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
   function del() {
     void run('deleting', async () => {
       await action(`/__program/${program.id}/delete`)
-      navigate({ kind: 'client', id: program.clientId })
+      navigate({ kind: 'dashboard' })
     })
   }
 
+  async function copyShareLink() {
+    if (!program.sync) return
+    try {
+      await navigator.clipboard.writeText(program.sync.addLink)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // clipboard unavailable
+    }
+  }
+
   async function loadVersionDiff(hash: string) {
+    if (versionDiff?.hash === hash) {
+      setVersionDiff(null)
+      return
+    }
     try {
       const res = await fetch(`/__program/${program.id}/version/${hash}`)
-      const json = (await res.json()) as { diff: ParsedDiff | null }
-      setVersionDiff({ hash, diff: json.diff })
+      const json = (await res.json()) as DocPair
+      setVersionDiff({ hash, oldDoc: json.oldDoc, newDoc: json.newDoc })
     } catch {
-      setVersionDiff({ hash, diff: null })
+      setVersionDiff({ hash, oldDoc: null, newDoc: null })
     }
   }
 
@@ -106,24 +129,20 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
   }, [program.doc.sessions])
 
   const syncState = program.sync
-  const canShare = !!client?.email
   const firstDate = program.doc.sessions[0]?.date
   const lastDate = program.doc.sessions[program.doc.sessions.length - 1]?.date
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <button
-        onClick={() => navigate({ kind: 'client', id: program.clientId })}
-        className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-100"
-      >
-        &larr; {client?.name ?? 'Client'}
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <button onClick={() => navigate({ kind: 'dashboard' })} className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-100">
+        &larr; All clients
       </button>
 
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">{program.doc.name}</h1>
-          {program.doc.goal && <p className="mt-1 text-sm text-zinc-400">{program.doc.goal}</p>}
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+          <h1 className="text-3xl font-bold">{program.doc.name}</h1>
+          {program.doc.goal && <p className="mt-2 text-sm text-zinc-400">{program.doc.goal}</p>}
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
             <span>
               {firstDate} &rarr; {lastDate}
             </span>
@@ -134,43 +153,35 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
           {program.doc.notes && <p className="mt-3 text-sm text-zinc-400">{program.doc.notes}</p>}
         </div>
 
-        <div className="flex flex-col items-end gap-1.5">
+        <div className="flex flex-col items-end gap-2">
           <SyncBadge status={program.syncStatus} />
           {syncState && (
             <>
-              <a
-                href={syncState.addLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:text-blue-300"
-              >
-                Add to my Google Calendar &rarr;
-              </a>
+              <div className="flex items-center gap-2">
+                <a
+                  href={syncState.addLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  Open share link
+                </a>
+                <Button size="sm" variant="outline" onClick={copyShareLink}>
+                  {copied ? 'Copied!' : 'Copy link'}
+                </Button>
+              </div>
               <span className="text-xs text-zinc-500">
-                shared with {syncState.sharedWithEmail} &middot; {syncState.events.length} events &middot;{' '}
-                {syncState.syncedAt.slice(0, 10)}
+                {syncState.events.length} events &middot; synced {syncState.syncedAt.slice(0, 10)}
               </span>
             </>
           )}
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
         {program.syncStatus === 'none' && (
-          <>
-            <Button onClick={sync} disabled={busy !== null || !canShare}>
-              {busy === 'syncing' ? 'Syncing…' : 'Sync to Google Calendar'}
-            </Button>
-            {!canShare && (
-              <span className="text-xs text-amber-400">
-                No email set for {client?.name ?? 'this client'} — ask your assistant to add it to data/clients.json
-              </span>
-            )}
-          </>
-        )}
-        {program.syncStatus === 'synced' && (
-          <Button variant="outline" onClick={resync} disabled={busy !== null}>
-            {busy === 'resyncing' ? 'Resyncing…' : 'Resync'}
+          <Button onClick={sync} disabled={busy !== null}>
+            {busy === 'syncing' ? 'Syncing…' : 'Sync to Google Calendar'}
           </Button>
         )}
         {program.syncStatus === 'changed' && (
@@ -178,7 +189,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
             <span className="text-xs text-amber-400">
               Program changed since last sync — calendar shows the previous version.
             </span>
-            <Button onClick={resync} disabled={busy !== null || !canShare}>
+            <Button onClick={resync} disabled={busy !== null}>
               {busy === 'resyncing' ? 'Resyncing…' : 'Resync to Google Calendar'}
             </Button>
           </>
@@ -203,18 +214,18 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
         )}
       </div>
 
-      {error && <div className="mt-3 rounded-md bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
-      {notice && <div className="mt-3 rounded-md bg-green-500/10 p-3 text-sm text-green-400">{notice}</div>}
+      {error && <div className="mt-4 rounded-md bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
+      {notice && <div className="mt-4 rounded-md bg-green-500/10 p-3 text-sm text-green-400">{notice}</div>}
 
       {program.hasPendingDiff && (
-        <section className="mt-6">
+        <section className="mt-8">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-400">
             Proposed changes
             {program.pendingStats ? ` · +${program.pendingStats.added} \u2212${program.pendingStats.removed}` : ''}
           </h2>
-          {diff ? (
+          {propDiff?.newDoc ? (
             <div className="space-y-3">
-              <DiffViewer diff={diff} />
+              <ProgramDiff oldDoc={propDiff.oldDoc} newDoc={propDiff.newDoc} />
               <div className="flex flex-wrap items-end gap-2">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-zinc-500">Commit message</label>
@@ -238,7 +249,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
         </section>
       )}
 
-      <section className="mt-6">
+      <section className="mt-8">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
           Versions ({history.length})
         </h2>
@@ -251,15 +262,33 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
                   className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left transition-colors hover:bg-zinc-900"
                 >
                   <span className="text-sm">{v.message}</span>
-                  <span className="text-xs text-zinc-500">
-                    {v.shortHash} &middot; {formatDateTime(v.date)}
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500">
+                      {v.shortHash} &middot; {formatDateTime(v.date)}
+                    </span>
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className={`size-4 shrink-0 text-zinc-500 transition-transform ${versionDiff?.hash === v.hash ? 'rotate-180' : ''}`}
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
                   </span>
                 </button>
-                {versionDiff?.hash === v.hash && versionDiff.diff && (
-                  <div className="px-3 pb-3">
-                    <DiffViewer diff={versionDiff.diff} />
-                  </div>
-                )}
+                {versionDiff?.hash === v.hash &&
+                  (versionDiff.newDoc ? (
+                    <div className="border-t border-zinc-800 px-3 py-3">
+                      <ProgramDiff oldDoc={versionDiff.oldDoc} newDoc={versionDiff.newDoc} />
+                    </div>
+                  ) : (
+                    <div className="border-t border-zinc-800 px-3 py-3 text-sm text-zinc-500">
+                      Couldn't load a readable diff for this version.
+                    </div>
+                  ))}
               </div>
             ))}
           </div>
@@ -268,7 +297,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
         )}
       </section>
 
-      <section className="mt-6">
+      <section className="mt-8">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">Schedule</h2>
         {weeks.map(([weekNum, sessions]) => (
           <Card key={weekNum} className="mb-4">

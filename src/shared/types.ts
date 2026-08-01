@@ -30,7 +30,6 @@ export interface ProgramDocument {
 export interface Client {
   id: string
   name: string
-  email: string | null
   notes?: string | null
   createdAt: string
 }
@@ -51,7 +50,6 @@ export interface SyncState {
   syncedHash: string
   syncedAt: string
   calendarId: string
-  sharedWithEmail: string
   addLink: string
   events: SyncEventRef[]
 }

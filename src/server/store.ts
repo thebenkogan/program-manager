@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import type { Client, ProgramFile, SyncState } from '../shared/types'
+import type { Client, ProgramFile, SyncState } from '../shared/types.ts'
 
 export const ROOT = path.resolve(process.cwd())
 export const DATA_DIR = path.join(ROOT, 'data')

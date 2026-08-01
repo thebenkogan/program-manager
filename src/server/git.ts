@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import { ROOT } from './store'
-import type { DiffLine, FileStatus, ParsedDiff, VersionInfo } from '../shared/types'
+import { ROOT } from './store.ts'
+import type { DiffLine, FileStatus, ParsedDiff, ProgramDocument, VersionInfo } from '../shared/types.ts'
 
 const GIT_IDENTITY = ['-c', 'user.name=Coach', '-c', 'user.email=coach@local']
 
@@ -130,6 +130,16 @@ export function programHistory(id: string): VersionInfo[] {
       })
   } catch {
     return []
+  }
+}
+
+export function programDocAtRef(rel: string, ref: string): ProgramDocument | null {
+  try {
+    const out = run('show', '--no-color', `${ref}:${rel}`)
+    const parsed = JSON.parse(out) as { doc?: ProgramDocument }
+    return parsed.doc ?? null
+  } catch {
+    return null
   }
 }
 
