@@ -29,19 +29,28 @@ export function ProgramPage({ program, navigate, action, refresh }: Props) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    fetch(`/__program/${program.id}/history`)
-      .then((r) => r.json() as Promise<{ versions: VersionInfo[] }>)
-      .then((j) => setHistory(j.versions))
-      .catch(() => {})
+    loadHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [program.id])
 
-  async function run(label: string, fn: () => Promise<unknown>) {
+  async function loadHistory() {
+    try {
+      const res = await fetch(`/__program/${program.id}/history`)
+      const json = (await res.json()) as { versions: VersionInfo[] }
+      setHistory(json.versions)
+    } catch {
+      // ignore
+    }
+  }
+
+  async function run(label: string, fn: () => Promise<unknown>, refreshVersions = false) {
     setBusy(label)
     setError(null)
     setNotice(null)
     try {
       await fn()
       await refresh()
+      if (refreshVersions) await loadHistory()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -68,7 +77,7 @@ export function ProgramPage({ program, navigate, action, refresh }: Props) {
       await action(`/__program/${program.id}/apply`, { message })
       setShowDiff(false)
       setNotice('Applied. New version committed.')
-    })
+    }, true)
   }
 
   function discard() {
@@ -76,7 +85,7 @@ export function ProgramPage({ program, navigate, action, refresh }: Props) {
       await action(`/__program/${program.id}/discard`)
       setShowDiff(false)
       setNotice('Changes discarded.')
-    })
+    }, true)
   }
 
   function del() {

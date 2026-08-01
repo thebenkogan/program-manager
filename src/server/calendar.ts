@@ -131,6 +131,14 @@ export async function resyncProgram(doc: ProgramDocument, prev: SyncState | null
 
   await makePublic(client, calendarId)
 
+  await client.calendars.patch({
+    calendarId,
+    requestBody: {
+      summary: doc.name,
+      description: `${doc.name} — ${doc.weeks} weeks from ${doc.startDate}`,
+    },
+  })
+
   let pageToken: string | undefined
   do {
     const listRes = await client.events.list({
