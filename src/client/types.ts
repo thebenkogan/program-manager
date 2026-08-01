@@ -15,6 +15,7 @@ export interface ProgramSummary extends ProgramFile {
   valid: boolean
   hasPendingDiff: boolean
   pendingStats: { added: number; removed: number } | null
+  pendingMessage: string | null
   committedDoc: ProgramDocument | null
   syncStatus: SyncStatus
   sync: SyncState | null

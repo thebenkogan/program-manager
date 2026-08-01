@@ -6,10 +6,12 @@ export const ROOT = path.resolve(process.cwd())
 export const DATA_DIR = path.join(ROOT, 'data')
 export const PROGRAMS_DIR = path.join(DATA_DIR, 'programs')
 export const SYNC_DIR = path.join(DATA_DIR, 'state', 'sync')
+export const PENDING_DIR = path.join(DATA_DIR, 'state', 'pending')
 
 function ensureDirs() {
   mkdirSync(PROGRAMS_DIR, { recursive: true })
   mkdirSync(SYNC_DIR, { recursive: true })
+  mkdirSync(PENDING_DIR, { recursive: true })
 }
 
 export function programRelPath(id: string): string {
@@ -58,8 +60,22 @@ export function writeSyncState(id: string, state: SyncState) {
   writeJson(path.join(SYNC_DIR, `${id}.json`), state)
 }
 
+export function getPendingMessage(id: string): string | null {
+  const data = readJson<{ message?: string }>(path.join(PENDING_DIR, `${id}.json`))
+  return data?.message?.trim() ? data.message : null
+}
+
+export function writePendingMessage(id: string, message: string) {
+  writeJson(path.join(PENDING_DIR, `${id}.json`), { message })
+}
+
+export function clearPendingMessage(id: string) {
+  const file = path.join(PENDING_DIR, `${id}.json`)
+  if (existsSync(file)) rmSync(file)
+}
+
 export function deleteProgramData(id: string) {
-  for (const file of [path.join(PROGRAMS_DIR, `${id}.json`), path.join(SYNC_DIR, `${id}.json`)]) {
+  for (const file of [path.join(PROGRAMS_DIR, `${id}.json`), path.join(SYNC_DIR, `${id}.json`), path.join(PENDING_DIR, `${id}.json`)]) {
     if (existsSync(file)) rmSync(file)
   }
 }

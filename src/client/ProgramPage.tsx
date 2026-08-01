@@ -21,7 +21,7 @@ export function ProgramPage({ program, navigate, action, refresh }: Props) {
   const [history, setHistory] = useState<VersionInfo[]>([])
   const [versionDiff, setVersionDiff] = useState<DocPair & { hash: string } | null>(null)
   const [showDiff, setShowDiff] = useState(false)
-  const [message, setMessage] = useState(`Adjust ${program.doc.name}`)
+  const [message, setMessage] = useState(() => program.pendingMessage ?? `Adjust ${program.doc.name}`)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)

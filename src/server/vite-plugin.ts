@@ -7,6 +7,9 @@ import { docHash } from './hash.ts'
 import {
   getProgramFile,
   getSyncState,
+  getPendingMessage,
+  writePendingMessage,
+  clearPendingMessage,
   listClients,
   listProgramFiles,
   programRelPath,
@@ -32,6 +35,7 @@ interface ProgramSummary extends ProgramFile {
   valid: boolean
   hasPendingDiff: boolean
   pendingStats: { added: number; removed: number } | null
+  pendingMessage: string | null
   committedDoc: ProgramDocument | null
   syncStatus: 'none' | 'synced' | 'changed'
   sync: SyncState | null
@@ -74,6 +78,7 @@ function programSummary(env: ProgramFile): ProgramSummary {
     valid: errors.length === 0,
     hasPendingDiff: diff !== null,
     pendingStats: diff?.stats ?? null,
+    pendingMessage: getPendingMessage(env.id),
     committedDoc: diff !== null ? programDocAtRef(programRelPath(env.id), 'HEAD') : null,
     syncStatus,
     sync,
@@ -142,8 +147,9 @@ export function coachData(): Plugin {
         const message =
           typeof body.message === 'string' && body.message.trim()
             ? body.message.trim()
-            : `Update program ${env.doc.name}`
+            : getPendingMessage(id) ?? `Update program ${env.doc.name}`
         const version = commitFile(programRelPath(id), message)
+        clearPendingMessage(id)
         return send(res, 200, { id, version })
       }
 
@@ -151,6 +157,7 @@ export function coachData(): Plugin {
       if (req.method === 'POST' && discardM) {
         const id = discardM[1]
         discardFile(programRelPath(id))
+        clearPendingMessage(id)
         return send(res, 200, { id })
       }
 
