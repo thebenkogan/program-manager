@@ -1,5 +1,6 @@
 import type {
   Client,
+  ProgramDocument,
   ProgramFile,
   SyncState,
   FileStatus,
@@ -14,6 +15,7 @@ export interface ProgramSummary extends ProgramFile {
   valid: boolean
   hasPendingDiff: boolean
   pendingStats: { added: number; removed: number } | null
+  committedDoc: ProgramDocument | null
   syncStatus: SyncStatus
   sync: SyncState | null
 }

@@ -1,7 +1,7 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import { loadEnv } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ProgramFile, SyncState } from '../shared/types.ts'
+import type { ProgramDocument, ProgramFile, SyncState } from '../shared/types.ts'
 import { validateProgram } from '../shared/validate.ts'
 import { docHash } from './hash.ts'
 import {
@@ -32,6 +32,7 @@ interface ProgramSummary extends ProgramFile {
   valid: boolean
   hasPendingDiff: boolean
   pendingStats: { added: number; removed: number } | null
+  committedDoc: ProgramDocument | null
   syncStatus: 'none' | 'synced' | 'changed'
   sync: SyncState | null
 }
@@ -73,6 +74,7 @@ function programSummary(env: ProgramFile): ProgramSummary {
     valid: errors.length === 0,
     hasPendingDiff: diff !== null,
     pendingStats: diff?.stats ?? null,
+    committedDoc: diff !== null ? programDocAtRef(programRelPath(env.id), 'HEAD') : null,
     syncStatus,
     sync,
   }
