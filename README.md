@@ -9,8 +9,7 @@ Local app for managing your training clients' programs: view them, review AI-pro
 ```bash
 bun install
 cp .env.example .env   # then fill in your Google service account creds
-bun run seed           # writes data/clients.json + an example program
-git init && git add -A && git -c user.name=Coach -c user.email=coach@local commit -m "Seed"
+git init && git add -A && git -c user.name=Coach -c user.email=coach@local commit -m "Init"
 bun run dev            # open http://localhost:5173
 ```
 
@@ -49,5 +48,4 @@ The coach repo is a git repo. **Every commit is a program version.**
 | Command | Purpose |
 |---|---|
 | `bun run dev` | start the app |
-| `bun run seed` | (re)write seed data files |
 | `bun run validate` | validate all program files in `data/programs/` |
