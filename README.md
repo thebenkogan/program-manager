@@ -1,0 +1,52 @@
+# Coach
+
+Local app for managing your training clients' programs: view them, review AI-proposed edits as diffs, apply them as versions, and sync to Google Calendar.
+
+**The AI (opencode) is the "API"** — you ask it to create/edit programs and it edits the files in `data/` directly. This app just reads those files and does calendar sync.
+
+## Setup
+
+```bash
+bun install
+cp .env.example .env   # then fill in your Google service account creds
+bun run seed           # writes data/clients.json + an example program
+git init && git add -A && git -c user.name=Coach -c user.email=coach@local commit -m "Seed"
+bun run dev            # open http://localhost:5173
+```
+
+## How it works
+
+- `data/clients.json` — the people you train. Set each client's `email` for calendar sharing.
+- `data/programs/{id}.json` — `{ id, clientId, doc }` where `doc` is a fully-resolved program schedule.
+- `data/state/sync/{id}.json` (gitignored) — calendar sync state, including the hash of the last synced program.
+
+The coach repo is a git repo. **Every commit is a program version.**
+
+### Program create/edit loop
+
+1. Tell opencode what you want (e.g. "Andi: 4 weeks of 5/3/1, training max squat 315").
+2. opencode writes the program file but **does not commit** → the UI shows it as a *proposed change*.
+3. In the UI: review the diff, click **Apply** (creates a version, deletes the diff) or **Discard**.
+4. Click **Sync to Google Calendar** → creates a calendar, shares it read-only with the client, adds all-day workout events.
+5. Later edits to the doc bump the hash → the UI offers **Resync**, which updates the events in place.
+
+### Sync status
+
+- **Not synced** — no calendar yet → Sync button.
+- **Synced** — `syncedHash` matches the current doc → up to date.
+- **Changed** — the doc changed since the last sync → Resync to update the calendar.
+
+## Conventions
+
+- opencode edits program files **without committing** so you can review the diff first.
+- opencode commits trivial edits (e.g. setting a client email) directly.
+- Run `bun run validate` after generating/editing programs.
+- Deleting a program from the UI removes the file, its git history entry, and its Google Calendar.
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `bun run dev` | start the app |
+| `bun run seed` | (re)write seed data files |
+| `bun run validate` | validate all program files in `data/programs/` |
