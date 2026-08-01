@@ -31,7 +31,7 @@ export interface Client {
   id: string
   name: string
   email: string | null
-  notes?: string
+  notes?: string | null
   createdAt: string
 }
 

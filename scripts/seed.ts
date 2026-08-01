@@ -20,8 +20,8 @@ const lifts = {
   'Power Clean': { sets: 5, reps: '3', start: 155, inc: 5, rest: '3 min' },
 } as const
 
-const dayA = ['Squat', 'Bench Press', 'Deadlift']
-const dayB = ['Squat', 'Overhead Press', 'Power Clean']
+const dayA: (keyof typeof lifts)[] = ['Squat', 'Bench Press', 'Deadlift']
+const dayB: (keyof typeof lifts)[] = ['Squat', 'Overhead Press', 'Power Clean']
 
 function addDays(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split('-').map(Number)

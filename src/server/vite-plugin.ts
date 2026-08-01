@@ -1,4 +1,5 @@
 import type { Plugin, ViteDevServer } from 'vite'
+import { loadEnv } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ProgramFile, SyncState } from '../shared/types'
 import { validateProgram } from '../shared/validate'
@@ -12,6 +13,7 @@ import {
   programRelPath,
   writeSyncState,
   deleteProgramData,
+  ROOT,
 } from './store'
 import {
   dataFileStatus,
@@ -76,7 +78,8 @@ function programSummary(env: ProgramFile): ProgramSummary {
 function getSsrLoader(server: ViteDevServer): SsrLoader | null {
   const s = server as ViteDevServer & { ssr?: { loadModule: (id: string) => Promise<unknown> } }
   if (typeof s.ssrLoadModule === 'function') return (id) => s.ssrLoadModule(id)
-  if (s.ssr?.loadModule) return (id) => s.ssr.loadModule(id)
+  const ssr = s.ssr
+  if (ssr?.loadModule) return (id) => ssr.loadModule(id)
   return null
 }
 
@@ -203,6 +206,10 @@ export function coachData(): Plugin {
   return {
     name: 'coach-data',
     configureServer(server) {
+      const env = loadEnv(server.config.mode, ROOT, '')
+      for (const [k, v] of Object.entries(env)) {
+        if (process.env[k] === undefined) process.env[k] = v
+      }
       ssrLoader = getSsrLoader(server)
       if (!ssrLoader) {
         server.config.logger.warn('[coach] SSR module loader unavailable — calendar sync disabled')

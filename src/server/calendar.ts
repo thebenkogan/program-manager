@@ -1,5 +1,4 @@
 import { google } from 'googleapis'
-import type { Calendar } from 'googleapis'
 import type { Exercise, ProgramDocument, Session, SyncState } from '../shared/types'
 import { docHash } from './hash'
 
@@ -121,7 +120,7 @@ export async function resyncProgram(
 
   if (calendarId) {
     try {
-      await client.calendars.get({ calendarId })
+      await client.events.list({ calendarId, maxResults: 1 })
     } catch {
       calendarId = undefined
     }
@@ -144,20 +143,30 @@ export async function resyncProgram(
     sharedWithEmail = clientEmail
   }
 
-  for (const e of prev?.events ?? []) {
-    try {
-      await client.events.delete({ calendarId, eventId: e.eventId })
-    } catch {
-      // event may already be gone
+  let pageToken: string | undefined
+  do {
+    const listRes = await client.events.list({
+      calendarId,
+      maxResults: 250,
+      singleEvents: true,
+      pageToken,
+    })
+    for (const ev of listRes.data.items ?? []) {
+      try {
+        await client.events.delete({ calendarId, eventId: ev.id! })
+      } catch {
+        // event may already be gone
+      }
     }
-  }
+    pageToken = listRes.data.nextPageToken ?? undefined
+  } while (pageToken)
 
   const events = await insertEvents(client, calendarId, doc)
   return {
     syncedHash: docHash(doc),
     syncedAt: new Date().toISOString(),
     calendarId,
-    sharedWithEmail,
+    sharedWithEmail: sharedWithEmail ?? clientEmail,
     addLink: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(calendarId)}`,
     events,
   }

@@ -105,7 +105,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
     return [...map.entries()].sort((a, b) => a[0] - b[0])
   }, [program.doc.sessions])
 
-  const sync = program.sync
+  const syncState = program.sync
   const canShare = !!client?.email
   const firstDate = program.doc.sessions[0]?.date
   const lastDate = program.doc.sessions[program.doc.sessions.length - 1]?.date
@@ -136,10 +136,10 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
 
         <div className="flex flex-col items-end gap-1.5">
           <SyncBadge status={program.syncStatus} />
-          {sync && (
+          {syncState && (
             <>
               <a
-                href={sync.addLink}
+                href={syncState.addLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-blue-400 hover:text-blue-300"
@@ -147,8 +147,8 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
                 Add to my Google Calendar &rarr;
               </a>
               <span className="text-xs text-zinc-500">
-                shared with {sync.sharedWithEmail} &middot; {sync.events.length} events &middot;{' '}
-                {sync.syncedAt.slice(0, 10)}
+                shared with {syncState.sharedWithEmail} &middot; {syncState.events.length} events &middot;{' '}
+                {syncState.syncedAt.slice(0, 10)}
               </span>
             </>
           )}
@@ -187,7 +187,7 @@ export function ProgramPage({ program, client, navigate, action, refresh }: Prop
         {confirmingDelete ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400">
-              Delete "{program.doc.name}"{sync ? ' and its Google Calendar' : ''}?
+              Delete "{program.doc.name}"{syncState ? ' and its Google Calendar' : ''}?
             </span>
             <Button size="sm" variant="danger" onClick={del} disabled={busy !== null}>
               {busy === 'deleting' ? 'Deleting…' : 'Confirm'}
