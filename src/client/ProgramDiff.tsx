@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Exercise, ProgramDocument, Session } from '../shared/types'
-import { Card, cn } from './components'
+import { Card, CoachCue, cn } from './components'
 import { fullDate } from './format'
 
 interface Props {
@@ -51,7 +51,7 @@ function exLine(ex: Exercise): string {
 
 function changedFields<T extends object>(oldV: T, newV: T): MetaChange[] {
   return (Object.keys(oldV) as (keyof T & string)[])
-    .filter((k) => oldV[k] !== newV[k])
+    .filter((k) => k !== 'coachNote' && oldV[k] !== newV[k])
     .map((k) => ({ field: k, old: oldV[k], new: newV[k] }))
 }
 
@@ -186,6 +186,7 @@ function ExRow({ ex, tone }: { ex: Exercise; tone: 'add' | 'del' | 'ctx' }) {
     >
       <span className="w-4 shrink-0 select-none">{tone === 'add' ? '+' : tone === 'del' ? '−' : ''}</span>
       <span className="font-medium">{ex.name}</span>
+      {ex.coachNote && <CoachCue note={ex.coachNote} />}
       <span className="text-inherit opacity-80">{exLine(ex)}</span>
     </div>
   )
@@ -226,7 +227,9 @@ function NewProgramBlock({ doc }: { doc: ProgramDocument }) {
                 <div className="mt-2 space-y-1">
                   {s.exercises.map((ex, i) => (
                     <div key={i} className="border-t border-green-500/20 py-1 text-sm text-green-300 first:border-0">
-                      <span className="font-medium">{ex.name}</span> <span className="text-green-400/70">{exLine(ex)}</span>
+                      <span className="font-medium">{ex.name}</span>
+                      {ex.coachNote && <CoachCue note={ex.coachNote} />}{' '}
+                      <span className="text-green-400/70">{exLine(ex)}</span>
                     </div>
                   ))}
                 </div>
@@ -340,7 +343,10 @@ function ExerciseRow({ exercise, change }: { exercise: Exercise; change: ExChang
   return (
     <div className={cn('border-t border-zinc-800 py-1.5 first:border-0', rowBg)}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className={cn('text-sm', tone === 'none' ? 'text-zinc-100' : 'text-inherit')}>{exercise.name}</span>
+        <span className={cn('text-sm', tone === 'none' ? 'text-zinc-100' : 'text-inherit')}>
+          {exercise.name}
+          {exercise.coachNote && <CoachCue note={exercise.coachNote} />}
+        </span>
         <span className="shrink-0 text-xs font-medium text-zinc-300">
           {exercise.sets}&times;{exercise.reps}
           {exercise.intensity && <span className="text-zinc-400"> @ {exercise.intensity}</span>}

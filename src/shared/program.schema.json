@@ -47,7 +47,8 @@
         "intensity": { "type": "string" },
         "rest": { "type": "string" },
         "supersetWith": { "type": "string" },
-        "notes": { "type": "string" }
+        "notes": { "type": "string" },
+        "coachNote": { "type": "string" }
       }
     }
   }

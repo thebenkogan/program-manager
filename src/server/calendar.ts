@@ -49,7 +49,11 @@ function eventDescription(doc: ProgramDocument, session: Session): string {
     session.focus ? `Focus: ${session.focus}` : null,
     session.notes ? `Notes: ${session.notes}` : null,
     '',
-    ...session.exercises.map(exerciseLine),
+    ...session.exercises.flatMap((ex) => {
+      const rows = [exerciseLine(ex)]
+      if (ex.coachNote) rows.push(`  🎯 ${ex.coachNote}`)
+      return rows
+    }),
   ].filter((l): l is string => l !== null)
   return lines.join('\n')
 }

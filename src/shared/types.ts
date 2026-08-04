@@ -6,6 +6,7 @@ export interface Exercise {
   rest?: string
   supersetWith?: string
   notes?: string
+  coachNote?: string
 }
 
 export interface Session {

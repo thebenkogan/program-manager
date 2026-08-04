@@ -47,7 +47,8 @@ Exercise {
   intensity?: string,       // e.g. "205 lb"
   rest?: string,            // NOT USED — omit entirely
   supersetWith?: string,
-  notes?: string            // optional free-text per-set note
+  notes?: string,           // optional free-text per-set note
+  coachNote?: string        // optional coaching cue, shown under the exercise in Google Calendar events
 }
 ```
 

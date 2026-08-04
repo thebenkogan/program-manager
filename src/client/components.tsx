@@ -38,6 +38,30 @@ export function Card({ className, children }: { className?: string; children: Re
   return <div className={cn('rounded-xl border border-zinc-800 bg-zinc-900/60', className)}>{children}</div>
 }
 
+export function Tooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="group relative inline-flex cursor-help">
+      {children}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-xs leading-snug text-zinc-100 opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+      >
+        {label}
+      </span>
+    </span>
+  )
+}
+
+export function CoachCue({ note }: { note: string }) {
+  return (
+    <Tooltip label={note}>
+      <span className="ml-1 inline-flex size-3.5 items-center justify-center rounded-full border border-blue-400/40 text-[9px] font-semibold leading-none text-blue-300/80 transition-colors group-hover:bg-blue-400/10">
+        i
+      </span>
+    </Tooltip>
+  )
+}
+
 export function SyncBadge({ status }: { status: SyncStatus }) {
   if (status === 'synced') {
     return (
