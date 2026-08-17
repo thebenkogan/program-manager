@@ -38,7 +38,6 @@ function addDays(dateStr: string, days: number): string {
 function exerciseLine(ex: Exercise): string {
   let line = `${ex.name} — ${ex.sets}×${ex.reps}`
   if (ex.intensity) line += ` @ ${ex.intensity}`
-  if (ex.rest) line += ` · rest ${ex.rest}`
   if (ex.notes) line += ` (${ex.notes})`
   return line
 }

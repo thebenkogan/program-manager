@@ -3,7 +3,6 @@ export interface Exercise {
   sets: number
   reps: string
   intensity?: string
-  rest?: string
   supersetWith?: string
   notes?: string
   coachNote?: string

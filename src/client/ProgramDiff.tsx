@@ -36,13 +36,12 @@ function fmt(v: unknown): string {
 }
 
 const SESSION_FIELDS = ['date', 'title', 'focus', 'notes'] as const
-const EX_FIELDS = ['sets', 'reps', 'intensity', 'rest', 'supersetWith', 'notes'] as const
+const EX_FIELDS = ['sets', 'reps', 'intensity', 'supersetWith', 'notes'] as const
 
 function exLine(ex: Exercise): string {
   const parts = [
     `${ex.sets}×${ex.reps}`,
     ex.intensity ? `@ ${ex.intensity}` : null,
-    ex.rest ? `rest ${ex.rest}` : null,
     ex.supersetWith ? `superset ${ex.supersetWith}` : null,
     ex.notes ? `(${ex.notes})` : null,
   ].filter(Boolean).join(' · ')
@@ -359,7 +358,6 @@ function ExerciseRow({ exercise, change }: { exercise: Exercise; change: ExChang
           ))}
         </div>
       )}
-      {tone === 'none' && exercise.rest && <div className="mt-0.5 text-xs text-zinc-500">rest {exercise.rest}</div>}
       {tone === 'none' && exercise.supersetWith && (
         <div className="mt-0.5 text-xs text-zinc-500">superset with {exercise.supersetWith}</div>
       )}

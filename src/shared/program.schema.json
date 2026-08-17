@@ -45,7 +45,6 @@
         "sets": { "type": "integer", "minimum": 1 },
         "reps": { "type": "string", "minLength": 1 },
         "intensity": { "type": "string" },
-        "rest": { "type": "string" },
         "supersetWith": { "type": "string" },
         "notes": { "type": "string" },
         "coachNote": { "type": "string" }

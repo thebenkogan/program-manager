@@ -37,6 +37,20 @@ function formatError(e: ErrorObject): string {
   }
 }
 
+function parseDate(s: string): Date | null {
+  const parts = s.split('-')
+  if (parts.length !== 3) return null
+  const d = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]))
+  if (isNaN(d.getTime())) return null
+  const check = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  if (check !== s) return null
+  return d
+}
+
+function formatISODate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 export function validateProgram(doc: unknown): string[] {
   validate(doc)
   const errors = validate.errors ? validate.errors.map(formatError) : []
@@ -51,6 +65,26 @@ export function validateProgram(doc: unknown): string[] {
           errors.push(`sessions[${i}].week: must be integer in 1..${weeks}`)
         }
       })
+    }
+
+    if (typeof d.startDate === 'string') {
+      const sd = parseDate(d.startDate)
+      if (sd === null) {
+        errors.push('startDate: invalid date')
+      } else if (typeof d.weeks === 'number') {
+        const endDateMs = sd.getTime() + d.weeks * 7 * 24 * 60 * 60 * 1000
+        const endStr = formatISODate(new Date(endDateMs))
+        d.sessions.forEach((s, i) => {
+          const sess = s as Record<string, unknown>
+          if (typeof sess.date !== 'string') return
+          const sessionDate = parseDate(sess.date)
+          if (sessionDate === null) {
+            errors.push(`sessions[${i}].date: invalid date`)
+          } else if (sessionDate.getTime() < sd.getTime() || sessionDate.getTime() >= endDateMs) {
+            errors.push(`sessions[${i}].date: must be within program date range (${d.startDate} to ${endStr})`)
+          }
+        })
+      }
     }
   }
 

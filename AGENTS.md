@@ -45,7 +45,6 @@ Exercise {
   sets: number,             // positive integer
   reps: string,             // string, e.g. "4" or "10"
   intensity?: string,       // e.g. "205 lb"
-  rest?: string,            // NOT USED — omit entirely
   supersetWith?: string,
   notes?: string,           // optional free-text per-set note
   coachNote?: string        // optional coaching cue, shown under the exercise in Google Calendar events
@@ -87,13 +86,27 @@ From past sessions, this is what makes a good update and avoids rework:
 6. **Session titles include the weekday** (e.g. `"Sat · Squat + Press + Clean"`). Update titles when an exercise set changes (e.g. + `Clean & Jerk`).
 7. **Verify dates land on the right weekdays** before finishing (see the check below), and run `bun run validate`.
 8. **Write the pending message** (see above) whenever you touch a program file, so Apply has a good default.
-9. Keep exercise `notes` empty unless the user says otherwise; omit `rest` entirely.
+9. Keep exercise `notes` empty unless the user says otherwise.
 
 Verify dates land on the intended weekday before finishing:
 
 ```bash
 pwd && bun -e 'for (const d of ["2026-08-03","2026-08-05","2026-08-08"]) console.log(d, new Date(d+"T00:00:00Z").toUTCString().slice(0,3))'
 ```
+
+## Progression conventions
+
+When editing programs, document progression rules clearly in `doc.notes`. The sessions contain concrete intensities — the notes explain *why* those numbers are what they are.
+
+**Linear progression** (most common): "Squat 3x5, +5 lb each session." Start weight + increment × session number = intensity.
+
+**Threshold progression**: "Press 3x5, +5 lb up to 135, then +2.5." When a weight reaches the threshold, switch to the smaller increment.
+
+**Shared progression**: When two exercises share a counter (e.g. clean and clean & jerk alternating), document the shared starting weight and increment. Assign them A, B, A, B across sessions and advance one counter per appearance.
+
+**Formula-derived**: "Light squat at 80% of Monday's heavy squat, rounded to 5 lb marks." Compute from the reference exercise, round per the rule.
+
+**Deload/reset**: "10% deload from vacation." Document the percentage and what it applies to. The starting weights reflect the deloaded values.
 
 ## Sync / calendar behavior (don't touch unless asked)
 
