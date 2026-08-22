@@ -143,6 +143,18 @@ export function programDocAtRef(rel: string, ref: string): ProgramDocument | nul
   }
 }
 
+function emptyTreeHash(): string {
+  try {
+    return run('hash-object', '-t', 'tree', '--stdin').trim()
+  } catch {
+    return '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+  }
+}
+
+export function programDocBeforeCommit(rel: string, hash: string): ProgramDocument | null {
+  return programDocAtRef(rel, `${hash}^`) ?? programDocAtRef(rel, emptyTreeHash())
+}
+
 export function programVersionDiff(id: string, hash: string): ParsedDiff | null {
   const rel = `data/programs/${id}.json`
   try {

@@ -91,9 +91,37 @@ function matchSessions(oldSessions: Session[], newSessions: Session[]): SessionC
   for (const week of weeks) {
     const olds = oldByWeek.get(week) ?? []
     const news = newByWeek.get(week) ?? []
-    for (let i = 0; i < Math.max(olds.length, news.length); i++) {
-      const o = olds[i]
-      const n = news[i]
+
+    // Pair by exact date first so inserting/reordering one session
+    // doesn't cascade spurious diffs across the week.
+    const matchedOld = new Set<string>()
+    const matchedNew = new Set<string>()
+    const pairs: { o?: Session; n?: Session }[] = []
+    const oldByDate = new Map(olds.map((s) => [s.date, s]))
+    for (const n of news) {
+      const o = !matchedNew.has(n.date) ? oldByDate.get(n.date) : undefined
+      if (o && !matchedOld.has(o.date)) {
+        pairs.push({ o, n })
+        matchedOld.add(o.date)
+        matchedNew.add(n.date)
+      }
+    }
+
+    // Leftovers (dates not present on both sides) pair positionally,
+    // so a moved session still renders as a changed-date diff.
+    const leftoverOlds = olds.filter((s) => !matchedOld.has(s.date))
+    const leftoverNews = news.filter((s) => !matchedNew.has(s.date))
+    for (let i = 0; i < Math.max(leftoverOlds.length, leftoverNews.length); i++) {
+      pairs.push({ o: leftoverOlds[i], n: leftoverNews[i] })
+    }
+
+    pairs.sort((a, b) => {
+      const da = a.n?.date ?? a.o!.date
+      const dbb = b.n?.date ?? b.o!.date
+      return da < dbb ? -1 : da > dbb ? 1 : 0
+    })
+
+    for (const { o, n } of pairs) {
       if (o && n) {
         const fields = SESSION_FIELDS.filter((f) => o[f] !== n[f]).map((f) => ({ field: f, old: o[f], new: n[f] }))
         const exercises = compareSessions(o, n)

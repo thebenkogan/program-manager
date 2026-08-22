@@ -25,6 +25,7 @@ import {
   deleteTrackedProgram,
   programHistory,
   programDocAtRef,
+  programDocBeforeCommit,
 } from './git.ts'
 
 type SsrLoader = (id: string) => Promise<unknown>
@@ -133,7 +134,7 @@ export function coachData(): Plugin {
         return send(res, 200, {
           id,
           hash,
-          oldDoc: programDocAtRef(rel, `${hash}^`),
+          oldDoc: programDocBeforeCommit(rel, hash),
           newDoc: programDocAtRef(rel, hash),
         })
       }

@@ -30,8 +30,8 @@ export function getCalendarClient(): ReturnType<typeof google.calendar> {
 }
 
 function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const dt = new Date(y, m - 1, d + days)
+  const dt = new Date(`${dateStr}T00:00:00Z`)
+  dt.setUTCDate(dt.getUTCDate() + days)
   return dt.toISOString().split('T')[0]
 }
 
