@@ -51,6 +51,10 @@ Exercise:
 - `sets`: positive integer.
 - `reps`: string, e.g. `"4"` or `"10"`.
 - `intensity?`: string, e.g. `"205 lb"`.
+- `backoff?`: back-off work after the top sets, written display-ready as
+  `"<sets>x<reps> @ <weight> lb"`, e.g. `"2x5 @ 125 lb"`. It renders as its own
+  line under the top set. Top set + back-off is ONE exercise — never split them
+  into two exercises. Only use separate exercises for genuinely different movements.
 - `supersetWith?`: string.
 - `notes?`: keep empty unless the user says otherwise.
 - `coachNote?`: coaching cue, shown under the exercise in calendar events.
@@ -85,8 +89,10 @@ Exercise:
 
 ## Math rules
 
-- Weights round to the nearest 2.5 lb.
+- Weights round to the nearest 2.5 lb — including back-off weights.
 - Intensities are strings like `"205 lb"` (number + space + `lb`).
+- Back-off progressions behave like the top lift unless told otherwise
+  (same increment, same rounding); document the back-off rule in `doc.notes`.
 - Apply rules literally:
   - `"10% lower than X"` means `X * 0.9`, then round to nearest 2.5 lb.
   - `"+5 lb each session"` means every occurrence goes up 5 lb, even if

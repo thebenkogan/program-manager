@@ -50,6 +50,7 @@ function eventDescription(doc: ProgramDocument, session: Session): string {
     '',
     ...session.exercises.flatMap((ex) => {
       const rows = [exerciseLine(ex)]
+      if (ex.backoff) rows.push(`  ${ex.backoff}`)
       if (ex.coachNote) rows.push(`  🎯 ${ex.coachNote}`)
       return rows
     }),

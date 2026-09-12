@@ -36,20 +36,36 @@ function fmt(v: unknown): string {
 }
 
 const SESSION_FIELDS = ['date', 'title', 'focus', 'notes'] as const
-const EX_FIELDS = ['sets', 'reps', 'intensity', 'supersetWith', 'notes'] as const
+const EX_FIELDS = ['sets', 'reps', 'intensity', 'backoff', 'supersetWith', 'notes'] as const
 
 function exLine(ex: Exercise): string {
   const parts = [
     `${ex.sets}×${ex.reps}`,
     ex.intensity ? `@ ${ex.intensity}` : null,
-    ex.supersetWith ? `superset ${ex.supersetWith}` : null,
-    ex.notes ? `(${ex.notes})` : null,
+    ex.backoff ?? null,
   ].filter(Boolean).join(' · ')
   return parts
 }
 
+/** Second scheme line, styled identically to the top-set line. Accepts both
+ *  "2x5 @ 130 lb" (current) and "130 lb 2x5" (legacy committed data). */
+function BackoffLine({ backoff }: { backoff: string }) {
+  const m = backoff.match(/^(\d+)x(.+?)@(.+)$/) ?? backoff.match(/^([\d.]+ lb) (\d+)x(.+)$/)
+  if (!m) return <div>{backoff}</div>
+  const [, a, b, c] = m
+  const [sets, reps, weight] = c.includes('lb') && !a.includes('lb')
+    ? [a, b.trim(), c.trim()]
+    : [b, c.trim(), a.trim()]
+  return (
+    <div>
+      {sets}&times;{reps}<span className="text-zinc-400"> @ {weight}</span>
+    </div>
+  )
+}
+
 function changedFields<T extends object>(oldV: T, newV: T): MetaChange[] {
-  return (Object.keys(oldV) as (keyof T & string)[])
+  const keys = [...new Set([...Object.keys(oldV), ...Object.keys(newV)])] as (keyof T & string)[]
+  return keys
     .filter((k) => k !== 'coachNote' && oldV[k] !== newV[k])
     .map((k) => ({ field: k, old: oldV[k], new: newV[k] }))
 }
@@ -374,9 +390,12 @@ function ExerciseRow({ exercise, change }: { exercise: Exercise; change: ExChang
           {exercise.name}
           {exercise.coachNote && <CoachCue note={exercise.coachNote} />}
         </span>
-        <span className="shrink-0 text-xs font-medium text-zinc-300">
-          {exercise.sets}&times;{exercise.reps}
-          {exercise.intensity && <span className="text-zinc-400"> @ {exercise.intensity}</span>}
+        <span className="shrink-0 text-right text-xs font-medium text-zinc-300">
+          <div>
+            {exercise.sets}&times;{exercise.reps}
+            {exercise.intensity && <span className="text-zinc-400"> @ {exercise.intensity}</span>}
+          </div>
+          {exercise.backoff && <BackoffLine backoff={exercise.backoff} />}
         </span>
       </div>
       {tone === 'changed' && change?.kind === 'changed' && (

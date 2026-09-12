@@ -3,6 +3,8 @@ export interface Exercise {
   sets: number
   reps: string
   intensity?: string
+  /** Back-off work after the top sets, display-ready, e.g. "2x5 @ 125 lb". Stays ONE exercise. */
+  backoff?: string
   supersetWith?: string
   notes?: string
   coachNote?: string
