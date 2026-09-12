@@ -9,7 +9,7 @@ Local app for managing your training clients' programs: view them, review AI-pro
 ```bash
 bun install
 cp .env.example .env   # then fill in your Google service account creds
-git init && git add -A && git -c user.name=Coach -c user.email=coach@local commit -m "Init"
+bun run seed-data      # creates data/ (your clients; own git repo, never pushed)
 bun run dev            # open http://localhost:5173
 ```
 
@@ -21,7 +21,7 @@ bun run dev            # open http://localhost:5173
 
 **Each client has exactly one program.** A new program replaces the previous file — old versions stay in git history.
 
-The coach repo is a git repo. **Every commit is a program version.**
+Your `data/` dir is its own git repo (the code repo ignores it, so client info is never pushed). **Every data commit is a program version.** Optionally back it up somewhere private with `git -C data remote add origin <private-repo-url>`.
 
 ### Program create/edit loop
 
@@ -49,3 +49,4 @@ The coach repo is a git repo. **Every commit is a program version.**
 |---|---|
 | `bun run dev` | start the app |
 | `bun run validate` | validate all program files in `data/programs/` |
+| `bun run seed-data` | initialize an empty `data/` repo for a fresh install |

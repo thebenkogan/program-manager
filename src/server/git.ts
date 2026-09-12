@@ -1,13 +1,22 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import { ROOT } from './store.ts'
+import { DATA_DIR, ROOT } from './store.ts'
 import type { DiffLine, FileStatus, ParsedDiff, ProgramDocument, VersionInfo } from '../shared/types.ts'
 
 const GIT_IDENTITY = ['-c', 'user.name=Coach', '-c', 'user.email=coach@local']
 
+// Client data lives in its own nested git repo under data/ (the parent repo
+// ignores data/ so client info is never pushed). All git ops below run with
+// cwd=data and data-stripped paths; the public interface keeps `data/...`
+// paths so callers are unaffected.
 function run(...args: string[]): string {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 })
+  return execFileSync('git', args, { cwd: DATA_DIR, encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 })
+}
+
+/** Strip the `data/` prefix for git commands run inside the data repo. */
+function g(rel: string): string {
+  return rel.replace(/^data\//, '')
 }
 
 export function parseUnifiedDiff(text: string): ParsedDiff {
@@ -52,7 +61,7 @@ export function parseUnifiedDiff(text: string): ParsedDiff {
 export function dataFileStatus(): FileStatus[] {
   let out: string
   try {
-    out = run('status', '--porcelain', '--', 'data')
+    out = run('status', '--porcelain', '--', 'programs', 'clients.json')
   } catch {
     return []
   }
@@ -60,7 +69,7 @@ export function dataFileStatus(): FileStatus[] {
   for (const line of out.split('\n')) {
     if (!line.trim()) continue
     const code = line.slice(0, 2).trim()
-    const file = line.slice(3)
+    const file = `data/${line.slice(3)}`
     if (code === '??') files.push({ path: file, state: 'added' })
     else if (code.includes('M')) files.push({ path: file, state: 'modified' })
     else if (code.includes('D')) files.push({ path: file, state: 'deleted' })
@@ -89,12 +98,12 @@ export function programDiff(id: string): ParsedDiff | null {
   }
   if (!status || status.state === 'deleted') return null
   if (status.state === 'added') return fileAsAdded(rel)
-  const out = run('diff', '--no-color', '--', rel)
+  const out = run('diff', '--no-color', '--', g(rel))
   return out.trim() ? parseUnifiedDiff(out) : null
 }
 
 export function commitFile(rel: string, message: string): string {
-  run('add', '--', rel)
+  run('add', '--', g(rel))
   run(...GIT_IDENTITY, 'commit', '-m', message)
   return run('rev-parse', 'HEAD').trim()
 }
@@ -104,13 +113,13 @@ export function discardFile(rel: string) {
   if (status?.state === 'added') {
     rmSync(path.join(ROOT, rel))
   } else {
-    run('checkout', '--', rel)
+    run('checkout', '--', g(rel))
   }
 }
 
 export function deleteTrackedProgram(rel: string, message: string) {
   try {
-    run('rm', '-f', '--', rel)
+    run('rm', '-f', '--', g(rel))
     run(...GIT_IDENTITY, 'commit', '-m', message)
   } catch {
     // file was not tracked; already removed from disk
@@ -118,7 +127,7 @@ export function deleteTrackedProgram(rel: string, message: string) {
 }
 
 export function programHistory(id: string): VersionInfo[] {
-  const rel = `data/programs/${id}.json`
+  const rel = g(`data/programs/${id}.json`)
   try {
     const out = run('log', '--no-color', `--format=%H|%h|%cI|%s`, '--', rel)
     return out
@@ -135,7 +144,7 @@ export function programHistory(id: string): VersionInfo[] {
 
 export function programDocAtRef(rel: string, ref: string): ProgramDocument | null {
   try {
-    const out = run('show', '--no-color', `${ref}:${rel}`)
+    const out = run('show', '--no-color', `${ref}:${g(rel)}`)
     const parsed = JSON.parse(out) as { doc?: ProgramDocument }
     return parsed.doc ?? null
   } catch {
@@ -156,7 +165,7 @@ export function programDocBeforeCommit(rel: string, hash: string): ProgramDocume
 }
 
 export function programVersionDiff(id: string, hash: string): ParsedDiff | null {
-  const rel = `data/programs/${id}.json`
+  const rel = g(`data/programs/${id}.json`)
   try {
     const out = run('show', '--no-color', '--format=', hash, '--', rel)
     return out.trim() ? parseUnifiedDiff(out) : null

@@ -225,9 +225,11 @@ export function checkPending(root: string, programId: string): Check[] {
  */
 export function standardChecks(root: string, programId: string, baselineSha: string): Check[] {
   const out: Check[] = [runValidate(root), ...checkPending(root, programId)];
-  const sha = run("git", ["rev-parse", "HEAD"], root);
+  // Client data lives in the nested data/ repo — check ITS head, not the parent's.
+  const dataDir = join(root, "data");
+  const sha = run("git", ["rev-parse", "HEAD"], dataDir);
   out.push(mkCheck("no commit (HEAD unchanged)", sha.out.trim() === baselineSha.trim(), baselineSha.trim(), sha.out.trim() || "git rev-parse failed"));
-  const staged = run("git", ["diff", "--cached", "--name-only"], root);
+  const staged = run("git", ["diff", "--cached", "--name-only"], dataDir);
   out.push(mkCheck("nothing staged", staged.code === 0 && staged.out.trim() === "", "(empty)", staged.out.trim().slice(0, 300)));
   return out;
 }

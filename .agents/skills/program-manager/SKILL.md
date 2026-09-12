@@ -23,6 +23,10 @@ You are the API for a local training-coach app. When the user asks for a program
 Each client has exactly one program. Replacing the file replaces the
 program; old versions live in git history.
 
+`data/` is its own git repo (the parent repo ignores it, so client info is
+never pushed). The pending diff, Apply, and Versions history all read that
+nested repo — the workflow below is unchanged, just scoped to `data/`.
+
 ## Program schema summary
 
 Full source of truth: `src/shared/program.schema.json`. No extra

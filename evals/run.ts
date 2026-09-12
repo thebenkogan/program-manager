@@ -220,9 +220,22 @@ async function runTask(taskId: string, cli: Cli): Promise<{ taskId: string; pass
     }
     rmSync(join(work, "data", "state", "pending", `${task.programId}.json`), { force: true });
 
-    // 3. Baseline SHA (no-commit check compares against this).
-    const rev = await spawnCapture(["git", "rev-parse", "HEAD"], work);
-    if (rev.code !== 0) throw new Error(`git rev-parse HEAD failed in copy: ${rev.stderr.slice(0, 300)}`);
+    // 3. Baseline SHA from the DATA repo (client data lives in its own nested
+    // git repo under data/; the no-commit check compares against this).
+    mkdirSync(join(work, "data", "programs"), { recursive: true });
+    const dataDir = join(work, "data");
+    let rev = await spawnCapture(["git", "rev-parse", "HEAD"], dataDir);
+    if (rev.code !== 0) {
+      // Fresh clone with no data history: init the nested repo around the seed.
+      await spawnCapture(["git", "init"], dataDir);
+      await spawnCapture(["git", "add", "clients.json", "programs"], dataDir);
+      await spawnCapture(
+        ["git", "-c", "user.name=Coach", "-c", "user.email=coach@local", "commit", "-m", "Seed eval data"],
+        dataDir,
+      );
+      rev = await spawnCapture(["git", "rev-parse", "HEAD"], dataDir);
+    }
+    if (rev.code !== 0) throw new Error(`git rev-parse HEAD failed in data copy: ${rev.stderr.slice(0, 300)}`);
     const baselineSha = rev.stdout.trim();
 
     // 4. Headless agent run, timed. --auto approves file edits (workdir is a

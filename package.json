@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "validate": "bun run scripts/validate.ts"
+    "validate": "bun run scripts/validate.ts",
+    "seed-data": "bun run scripts/seed-data.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
