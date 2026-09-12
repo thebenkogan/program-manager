@@ -1,0 +1,86 @@
+{
+  "clients": [
+    {
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "id": "dave",
+      "name": "Dave",
+      "notes": null
+    }
+  ],
+  "program": {
+    "clientId": "dave",
+    "doc": {
+      "name": "Dave's Squat & Bench",
+      "notes": "Squat 3x5, +5 lb each session (190-200). Bench 3x5, +5 lb each session (140-150).",
+      "sessions": [
+        {
+          "date": "2026-09-14",
+          "exercises": [
+            {
+              "intensity": "190 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "140 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Mon · Squat + Bench",
+          "week": 1
+        },
+        {
+          "date": "2026-09-16",
+          "exercises": [
+            {
+              "intensity": "195 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "145 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Wed · Squat + Bench",
+          "week": 1
+        },
+        {
+          "date": "2026-09-19",
+          "exercises": [
+            {
+              "intensity": "200 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "150 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Sat · Squat + Bench",
+          "week": 1
+        }
+      ],
+      "startDate": "2026-09-14",
+      "version": 1,
+      "weeks": 1
+    },
+    "id": "dave-squat-bench"
+  }
+}

@@ -1,0 +1,5 @@
+hey Ella's program at data/programs/ella-pull-fix.json is messed up — 4 sessions (Mon 2026-09-14, Wed 2026-09-16, Sat 2026-09-19, Mon 2026-09-21), each has Back Squat 3x5 at a flat 150 plus a pull that's just Clean 5x3 at 120 every time. that uniform pull work is wrong.
+
+make the pull strictly alternate session to session (not pinned to weekdays): Clean & Jerk on 9/14, Clean on 9/16, C&J on 9/19, Clean on 9/21. both are 5x3 and share one counter from 115, +5 each appearance (115, 120, 125, 130 across the four sessions). leave squat exactly at 150 every session. fix each session title so it names the pull actually programmed that day (Clean always in there, Jerk iff it's a C&J day). jot the alternating shared progression in notes (mention alternating, shared, 115). don't add, remove, or reorder sessions.
+
+run bun run validate til it passes, write data/state/pending/ella-pull-fix.json with a capitalized one-line message (action + lifts + weights, no trailing period). no commit, no staging.

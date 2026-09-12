@@ -1,0 +1,8 @@
+{
+  "clientId": "ella",
+  "description": "Fix Ella's pull work to alternating C&J/Clean with shared progression",
+  "difficulty": "medium",
+  "id": "manage-alternation-fix",
+  "programId": "ella-pull-fix",
+  "timeout_s": 900
+}

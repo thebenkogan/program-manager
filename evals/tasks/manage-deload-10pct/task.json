@@ -1,0 +1,8 @@
+{
+  "clientId": "frank",
+  "description": "Apply 10% deload to Frank's squat and bench only",
+  "difficulty": "hard",
+  "id": "manage-deload-10pct",
+  "programId": "frank-deload",
+  "timeout_s": 1200
+}

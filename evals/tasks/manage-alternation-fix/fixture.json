@@ -1,0 +1,107 @@
+{
+  "clients": [
+    {
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "id": "ella",
+      "name": "Ella",
+      "notes": null
+    }
+  ],
+  "program": {
+    "clientId": "ella",
+    "doc": {
+      "name": "Ella's Pull Fix",
+      "notes": "Squat 3x5 at 150 lb. Pull: Clean 5x3 at 120 lb every session (wrong — should alternate).",
+      "sessions": [
+        {
+          "date": "2026-09-14",
+          "exercises": [
+            {
+              "intensity": "150 lb",
+              "name": "Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "120 lb",
+              "name": "Clean",
+              "notes": "",
+              "reps": "3",
+              "sets": 5
+            }
+          ],
+          "title": "Mon · Squat + Clean",
+          "week": 1
+        },
+        {
+          "date": "2026-09-16",
+          "exercises": [
+            {
+              "intensity": "120 lb",
+              "name": "Clean",
+              "notes": "",
+              "reps": "3",
+              "sets": 5
+            },
+            {
+              "intensity": "150 lb",
+              "name": "Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Wed · Squat + Clean",
+          "week": 1
+        },
+        {
+          "date": "2026-09-19",
+          "exercises": [
+            {
+              "intensity": "120 lb",
+              "name": "Clean",
+              "notes": "",
+              "reps": "3",
+              "sets": 5
+            },
+            {
+              "intensity": "150 lb",
+              "name": "Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Sat · Squat + Clean",
+          "week": 1
+        },
+        {
+          "date": "2026-09-21",
+          "exercises": [
+            {
+              "intensity": "120 lb",
+              "name": "Clean",
+              "notes": "",
+              "reps": "3",
+              "sets": 5
+            },
+            {
+              "intensity": "150 lb",
+              "name": "Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Mon · Squat + Clean",
+          "week": 2
+        }
+      ],
+      "startDate": "2026-09-14",
+      "version": 1,
+      "weeks": 2
+    },
+    "id": "ella-pull-fix"
+  }
+}

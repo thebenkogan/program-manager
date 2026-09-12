@@ -1,0 +1,5 @@
+hey, Bob (client id "bob", already exists — leave data/clients.json alone) needs a 2-week press program. create data/programs/bob-press-focus.json with id "bob-press-focus", clientId "bob", name "Bob's Press Focus", startDate 2026-10-06, 2 weeks.
+
+Tue/Thu both weeks = 4 sessions on 10-06, 10-08, 10-13, 10-15 (make sure those are actually Tue/Thu). every session has Overhead Press 3x5 + Back Squat 3x5. press rule: start at 125, +5 a session up to 135, then +2.5 after that (works out to 125, 130, 135, 137.5). squat is the boring control lift: start 150, +5 each session (150, 155, 160, 165). first two sessions week 1, last two week 2, titles start with the weekday like "Tue · Press + Squat".
+
+jot both rules in notes, including the 135 threshold and the switch to 2.5 lb increments plus the squat progression. run bun run validate (has to pass), write data/state/pending/bob-press-focus.json with a capitalized one-liner with lifts + weights and no trailing period. don't commit or stage anything.

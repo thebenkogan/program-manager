@@ -1,0 +1,8 @@
+{
+  "clientId": "dave",
+  "description": "Bump every squat by 5 lb in Dave's 3-session program",
+  "difficulty": "easy",
+  "id": "manage-bump-5lb",
+  "programId": "dave-squat-bench",
+  "timeout_s": 600
+}

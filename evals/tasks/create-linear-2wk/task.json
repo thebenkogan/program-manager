@@ -1,0 +1,8 @@
+{
+  "clientId": "alice",
+  "description": "Create 2-week Mon/Wed/Sat linear progression program for Alice",
+  "difficulty": "easy",
+  "id": "create-linear-2wk",
+  "programId": "alice-linear-2wk",
+  "timeout_s": 600
+}

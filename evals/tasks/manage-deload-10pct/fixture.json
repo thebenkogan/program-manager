@@ -1,0 +1,93 @@
+{
+  "clients": [
+    {
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "id": "frank",
+      "name": "Frank",
+      "notes": null
+    }
+  ],
+  "program": {
+    "clientId": "frank",
+    "doc": {
+      "name": "Frank's Strength Block",
+      "notes": "Squat 3x5 (200-205). Bench 3x5 (147-152). Deadlift 1x5 Wednesdays at 300 lb.",
+      "sessions": [
+        {
+          "date": "2026-09-14",
+          "exercises": [
+            {
+              "intensity": "200 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "150 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Mon · Squat + Bench",
+          "week": 1
+        },
+        {
+          "date": "2026-09-16",
+          "exercises": [
+            {
+              "intensity": "205 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "147 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "300 lb",
+              "name": "Deadlift",
+              "notes": "",
+              "reps": "5",
+              "sets": 1
+            }
+          ],
+          "title": "Wed · Squat + Bench + Deadlift",
+          "week": 1
+        },
+        {
+          "date": "2026-09-19",
+          "exercises": [
+            {
+              "intensity": "152 lb",
+              "name": "Bench Press",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            },
+            {
+              "intensity": "203 lb",
+              "name": "High Bar Back Squat",
+              "notes": "",
+              "reps": "5",
+              "sets": 3
+            }
+          ],
+          "title": "Sat · Squat + Bench",
+          "week": 1
+        }
+      ],
+      "startDate": "2026-09-14",
+      "version": 1,
+      "weeks": 1
+    },
+    "id": "frank-deload"
+  }
+}

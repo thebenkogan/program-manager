@@ -1,0 +1,5 @@
+hey, new program for Alice (client id "alice", she's already in data/clients.json so don't touch that). create data/programs/alice-linear-2wk.json with id "alice-linear-2wk", clientId "alice", name "Alice's Linear Strength", startDate 2026-10-05, 2 weeks.
+
+Mon/Wed/Sat both weeks so 6 sessions: 10-05, 10-07, 10-10, 10-12, 10-14, 10-17 — double-check those actually land on Mon/Wed/Sat. every session gets Back Squat 3x5 + Bench Press 3x5, and the Mondays (10-05, 10-12) also get Deadlift 1x5. squat starts at 135 and goes up 5 each session (135, 140, 145, 150, 155, 160), bench starts at 95 up 5 each session (95, 100, 105, 110, 115, 120), deadlift is 185 then 195 (+10/week). first three sessions are week 1, last three week 2, and titles start with the weekday like "Mon · Squat + Bench + Deadlift".
+
+jot the progression rules in notes (squat, bench, deadlift with the start weights and the 5 lb steps). run bun run validate til it passes, drop data/state/pending/alice-linear-2wk.json with a capitalized one-line message naming the lifts + weights (no trailing period), and don't commit or stage anything.

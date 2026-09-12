@@ -1,0 +1,8 @@
+{
+  "clientId": "bob",
+  "description": "Create 2-week Tue/Thu program for Bob with threshold press progression",
+  "difficulty": "medium",
+  "id": "create-threshold-press",
+  "programId": "bob-press-focus",
+  "timeout_s": 900
+}

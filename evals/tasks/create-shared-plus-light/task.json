@@ -1,0 +1,8 @@
+{
+  "clientId": "cara",
+  "description": "Create 2-week heavy/light squat program for Cara with shared clean progression",
+  "difficulty": "hard",
+  "id": "create-shared-plus-light",
+  "programId": "cara-heavy-light",
+  "timeout_s": 1200
+}
