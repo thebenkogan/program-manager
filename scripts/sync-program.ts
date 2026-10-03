@@ -20,9 +20,8 @@ const env = loadEnv('development', ROOT, '')
 for (const [k, v] of Object.entries(env)) if (process.env[k] === undefined) process.env[k] = v
 
 const { validateProgram } = await import('../src/shared/validate.ts')
-const { getProgramFile, getSyncState, writeSyncState, getPendingMessage } = await import(
-  '../src/server/store.ts'
-)
+const { getProgramFile, getSyncState, writeSyncState, getPendingMessage, clearPendingMessage } =
+  await import('../src/server/store.ts')
 const { resyncProgram, syncProgram } = await import('../src/server/calendar.ts')
 
 const GIT_IDENTITY = ['-c', 'user.name=coach', '-c', 'user.email=coach@local']
@@ -72,6 +71,10 @@ if (dirty) {
   git(['commit', '-m', message])
   version = git(['rev-parse', 'HEAD']).trim()
   console.log(`committed ${version.slice(0, 7)}`)
+  // Mirror the UI's Apply: clear the pending message once it is committed,
+  // otherwise a stale message sits there and gets reused as the next
+  // commit's subject.
+  clearPendingMessage(id)
 }
 
 const state = prev ? await resyncProgram(file.doc, prev) : await syncProgram(file.doc)
