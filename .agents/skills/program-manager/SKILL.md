@@ -201,6 +201,15 @@ that week's sessions side by side, tinted lift strips, backoff as a nested
 sub-strip) is Ben's chosen format. Do not redesign it unasked, and do not
 fall back to landscape week-columns.
 
+Delete the rendered PNG after the reply carrying it has been sent:
+
+```bash
+cd /home/benkogan/code/coach && rm -f .cache/*.png && rmdir .cache 2>/dev/null; true
+```
+
+Ben asked not to accumulate images. Do this on a LATER turn than the one that
+sends the card — deleting too early leaves nothing to attach.
+
 ## Pending message style
 
 The message becomes the git commit message and appears in the UI's
