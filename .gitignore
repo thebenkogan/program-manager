@@ -5,3 +5,5 @@ data/
 *.local
 evals/results/
 .cache/
+.cache/
+__pycache__/
