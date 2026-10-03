@@ -143,7 +143,7 @@ they share a counter.
 pwd && bun -e 'for (const d of ["2026-08-03","2026-08-05","2026-08-08"]) console.log(d, new Date(d+"T00:00:00Z").toUTCString().slice(0,3))'
 ```
 
-## Workflow: never commit program files yourself
+## Workflow: edit, then stop for review
 
 1. Edit `data/programs/{id}.json`.
 2. From the repo root, run validation:
@@ -155,10 +155,46 @@ pwd && bun run validate
 3. Write the pending message to `data/state/pending/{id}.json` as
    `{ "message": "..." }` (gitignored Apply-box default text).
 4. STOP. Leave the working tree dirty for user review.
-5. Never run `git commit` or `git add` on program files. The uncommitted
-   file is what the UI renders as a proposed change with a diff view;
-   committing hides the Apply UI because the diff/Apply/Discard controls
-   vanish when there is no pending change.
+5. Never run `git commit` or `git add` on program files on your own
+   initiative. The uncommitted file is what the UI renders as a proposed
+   change with a diff view; committing hides the Apply UI because the
+   diff/Apply/Discard controls vanish when there is no pending change.
+
+### Headless mode (Ben's explicit approval)
+
+When — and only when — Ben explicitly approves the change ("go ahead",
+"apply it", "commit it"), the commit + calendar steps may be done without
+the UI, via:
+
+```bash
+cd /home/benkogan/code/coach
+bun run scripts/sync-program.ts <programId> --dry-run   # show diff, change nothing
+bun run scripts/sync-program.ts <programId>             # commit with the pending message, then resync calendar
+```
+
+The script validates, commits the program file using the pending message
+as the commit message (so Versions history stays meaningful), then calls
+`resyncProgram()` and writes `data/state/sync/{id}.json`. It mirrors the
+UI's Apply + Resync. Commit must precede resync — the API rejects a
+resync while a pending diff exists.
+
+Always show Ben the diff (dry run) and get explicit approval before the
+non-dry run.
+
+### Card renderer — the default way to show Ben a change
+
+Ben does not use the UI and prefers PICTURES. On every program change, render
+and send a card; never fall back to a text diff unless he asks.
+
+```bash
+cd /home/benkogan/code/coach
+python3 scripts/render_card.py <programId> --diff   # run BEFORE committing
+```
+
+Output is `.cache/<programId>.png` — send it as a `MEDIA:` path. The layout
+(portrait week-rows, that week's sessions side by side, tinted lift strips,
+backoff as a nested sub-strip) is Ben's chosen format. Do not redesign it
+unasked, and do not fall back to landscape week-columns.
 
 ## Pending message style
 
