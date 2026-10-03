@@ -4,3 +4,4 @@ dist/
 data/
 *.local
 evals/results/
+.cache/
