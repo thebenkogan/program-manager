@@ -6,6 +6,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "validate": "bun run scripts/validate.ts",
+    "render:test": "python3 scripts/test_render_card.py",
     "seed-data": "bun run scripts/seed-data.ts"
   },
   "dependencies": {
