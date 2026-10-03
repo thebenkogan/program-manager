@@ -1,50 +1,71 @@
 #!/usr/bin/env python3
 """
-Render a coach program (and optionally a diff vs HEAD) to a PNG card for chat.
+Render a coach program to a PNG card for WhatsApp.
 
 Usage:
     python3 scripts/render_card.py <programId> [--diff] [--out path.png]
 
---diff  include a "Proposed change" card comparing the working-tree program
-        against git HEAD.
+Default layout (Ben's chosen format): PORTRAIT week-rows. Each week is a
+horizontal band; its sessions sit side by side inside it, Mon/Wed/Sat left to
+right. Every lift gets a tinted strip; a backoff renders as a dimmer nested
+sub-strip beneath its top set. ~700px wide, ~1000px tall for a 4-week block.
 
-Requires Pillow and the two vendored variable fonts in assets/fonts/.
-No browser, no system fonts.
+--diff  append a "Proposed change" card comparing the working tree against
+        HEAD in the nested data/ repo. MUST be run BEFORE committing, or there
+        is nothing to diff against.
+
+Self-contained: Pillow + the vendored variable fonts in assets/fonts/. No
+browser, no system fonts. Chromium on this box is broken (missing libatk), so
+do not try to screenshot HTML instead.
 """
 import json
 import os
 import subprocess
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONTS = os.path.join(ROOT, "assets", "fonts")
 INTER = os.path.join(FONTS, "Inter.ttf")
 MONO = os.path.join(FONTS, "JBM.ttf")
+CACHE = os.path.join(ROOT, ".cache")
 
-BG, CARD, LINE = "#0f1115", "#171a21", "#262b35"
-TXT, DIM, UP, DOWN, ACCENT = "#e8eaed", "#9aa3b2", "#3ddc97", "#ff6b6b", "#7aa2f7"
-SOFT = "#1e222b"
-W, PAD = 900, 24
-L, R = 16 + PAD, W - 16 - PAD
+W, H = 700, 4000
+PAD = 18
+L, R = 14, W - 14
 
-# lift-name column, then scheme column, then right-aligned weight column
-NAME_X = L + 66
-SCHEME_X = L + 268
-WT_X = R
+BG = "#0B0D10"
+CARD = "#12161C"
+STRIP = "#1A2029"
+SUB = "#151A22"
+LINE = "#222831"
+HDRBG = "#1C2029"
+TXT = "#E9ECF1"
+DIM = "#79818F"
+FAINT = "#5E6875"
+SCHEME = "#98A2B0"      # sets x reps — must stay light enough to read
+UP = "#3DDC97"
+DOWN = "#FF6B6B"
+WARN = "#E0B341"
+ACC = {"Mon": "#7AA2F7", "Wed": "#E8836F", "Sat": "#3DDC97"}
+
+LIFT_H = 42
+BACK_H = 26
+HDR_H = 34
 
 _fc = {}
 
 
 def font(px, weight=400, mono=False):
-    key = (px, weight, mono)
-    if key not in _fc:
+    """Cached font. Inter is a variable font, so weight comes from its axes."""
+    k = (px, weight, mono)
+    if k not in _fc:
         f = ImageFont.truetype(MONO if mono else INTER, px)
         if not mono:
             f.set_variation_by_axes([20, weight])
-        _fc[key] = f
-    return _fc[key]
+        _fc[k] = f
+    return _fc[k]
 
 
 def tw(d, t, f):
@@ -52,204 +73,218 @@ def tw(d, t, f):
     return b[2] - b[0]
 
 
+def fit(d, txt, maxw, px, weight=400):
+    """Shrink until txt fits maxw. Long lift names use this instead of clipping."""
+    while px > 7:
+        f = font(px, weight)
+        if tw(d, txt, f) <= maxw:
+            return f
+        px -= 1
+    return font(7, weight)
+
+
+def finish(img, bg, pad=18):
+    """Crop the oversized canvas down to what was actually drawn."""
+    diff = ImageChops.difference(img, Image.new("RGB", img.size, bg))
+    bbox = diff.getbbox()
+    if not bbox:
+        return img
+    x0, y0, x1, y1 = bbox
+    x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
+    x1, y1 = min(img.size[0], x1 + pad), min(img.size[1], y1 + pad)
+    return img.crop((x0, y0, x1, y1))
+
+
+def wval(s):
+    try:
+        return float(str(s).replace("lb", "").strip())
+    except ValueError:
+        return None
+
+
 def git(*args):
     return subprocess.run(["git", "-C", os.path.join(ROOT, "data"), *args],
                           capture_output=True, text=True, check=True).stdout
 
 
-def load(pid):
-    return json.load(open(os.path.join(ROOT, "data", "programs", f"{pid}.json")))
+WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def flat(doc):
-    """(date, exercise name) -> 'sets x reps   weight  (backoff)'"""
-    out = {}
+def rows_of(doc):
+    """Flatten a program into render-ready session rows."""
+    import datetime
+    out = []
     for s in doc["sessions"]:
-        for e in s["exercises"]:
-            v = f"{e['sets']}x{e['reps']}  {e.get('intensity', '')}".rstrip()
-            if e.get("backoff"):
-                v += f"  +{e['backoff']}"
-            out[(s["date"], e["name"])] = v
+        dt = datetime.date.fromisoformat(s["date"])
+        lifts = [{
+            "name": e["name"],
+            "scheme": f"{e['sets']}x{e['reps']}",
+            "weight": e.get("intensity", ""),
+            "backoff": e.get("backoff"),
+            "w": wval(e.get("intensity", "")),
+        } for e in s["exercises"]]
+        out.append({"date": s["date"], "wd": WD[dt.weekday()], "d": dt,
+                    "lifts": lifts, "week": s["week"]})
     return out
 
 
-# ---------- measurement ----------
+# ------------------------------------------------------------------ geometry
 
-def sess_h(rows):
-    """rows: list of (day, date, lifts)"""
-    h = 60 + 14
-    for _, _, lifts in rows:
-        h += sum(22 + (19 if l["backoff"] else 0) for l in lifts) + SEP
-    return h + 6
+def sess_h(r):
+    return HDR_H + sum(LIFT_H + (BACK_H if l["backoff"] else 0)
+                       for l in r["lifts"]) + 12
 
 
-SEP = 20
+def draw_session(d, x0, x1, y, r):
+    h = sess_h(r)
+    d.rounded_rectangle([x0, y, x1, y + h], 12, fill=CARD)
+    d.text((x0 + 12, y + 11), r["wd"].upper(), font=font(10, 600), fill=ACC[r["wd"]])
+    d.text((x0 + 46, y + 11), r["d"].strftime("%m/%d"), font=font(10), fill=DIM)
+    ly = y + HDR_H
+    sx0, sx1 = x0 + 8, x1 - 8
+    inner = (sx1 - sx0) - 20
+    for l in r["lifts"]:
+        d.rounded_rectangle([sx0, ly, sx1, ly + LIFT_H - 6], 7, fill=STRIP)
+        d.text((sx0 + 10, ly + 4), l["name"],
+               font=fit(d, l["name"], inner - 74, 11.5), fill=TXT)
+        d.text((sx1 - 10, ly + 3), l["weight"], font=font(14, 700),
+               fill=UP, anchor="ra")
+        d.text((sx0 + 10, ly + 22), l["scheme"], font=font(11, 500), fill=SCHEME)
+        ly += LIFT_H
+        if l["backoff"]:
+            d.rounded_rectangle([sx0 + 8, ly, sx1, ly + BACK_H - 6], 5, fill=SUB)
+            d.text((sx0 + 18, ly + 5), l["backoff"], font=font(10.5, 500), fill=SCHEME)
+            ly += BACK_H
+    return h
 
 
-def draw_session(d, y, day, date, lifts):
-    d.text((L, y + 2), day, font=font(11, 600), fill=DIM)
-    d.text((L, y + 18), date, font=font(14, 600), fill=TXT)
-    ly = y
-    for e in lifts:
-        f = font(13, 400)
-        d.text((NAME_X, ly + 4), e["name"], font=f, fill=TXT)
-        if e.get("scheme"):
-            d.text((SCHEME_X, ly + 5), e["scheme"], font=font(12, 400), fill=DIM)
-        if e.get("weight"):
-            d.text((WT_X, ly + 4), e["weight"], font=font(13, 600), fill=TXT, anchor="ra")
-        ly += 22
-        if e.get("backoff"):
-            d.text((NAME_X, ly - 3), "└", font=font(11, 500), fill="#39404f")
-            d.text((NAME_X + 14, ly - 3), e["backoff"], font=font(11, 500), fill=DIM)
-            ly += 19
-    return ly
+def draw_week_row(d, x0, x1, y, wr, cw, gap):
+    d.text((x0, y), f"WEEK {wr[0]['week']}", font=font(10, 600), fill=ACC["Mon"])
+    d.line([x0 + 52, y + 8, x1, y + 8], fill=LINE)
+    for i, r in enumerate(wr):
+        cx = x0 + i * (cw + gap)
+        draw_session(d, cx, cx + cw, y + 18, r)
 
 
-def program_card(img, d, doc, top, tag):
-    sessions = []
-    for s in doc["sessions"]:
-        lifts = []
-        for e in s["exercises"]:
-            sch = f"{e['sets']}x{e['reps']}"
-            if e.get("backoff"):
-                sch = f"{e['sets']}x{e['reps']} + {e['backoff'].split()[0]}"
-            lifts.append({"name": e["name"], "scheme": sch,
-                          "weight": e.get("intensity", ""), "backoff": e.get("backoff")})
-        sessions.append((s["date"], lifts))
-    return sessions
-
-
-def render(pid, doc, old_doc, out_path, tag=None, only=None):
-    import datetime
-    want_prog = only != "diff"
-    want_diff = only != "program"
-
-    dates = [s["date"] for s in doc["sessions"]]
-    sub = f"{len(dates)} sessions  \u00b7  {dates[0]} \u2013 {dates[-1]}" if dates else "no sessions"
-    wd = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+def diff_rows_of(old_doc, doc):
+    """(kind, (date, name), old, new) for every changed lift."""
+    def flat(d):
+        m = {}
+        for s in d["sessions"]:
+            for e in s["exercises"]:
+                v = f"{e['sets']}x{e['reps']}  {e.get('intensity', '')}".rstrip()
+                if e.get("backoff"):
+                    v += f"  +{e['backoff']}"
+                m[(s["date"], e["name"])] = v
+        return m
+    o, n = flat(old_doc), flat(doc)
     rows = []
-    for s in doc["sessions"]:
-        lifts = []
-        for e in s["exercises"]:
-            sch = f"{e['sets']}x{e['reps']}"
-            if e.get("backoff"):
-                sch += " + " + e["backoff"].split()[0]
-            lifts.append({"name": e["name"], "scheme": sch,
-                          "weight": e.get("intensity", ""), "backoff": e.get("backoff")})
-        dt = datetime.date.fromisoformat(s["date"])
-        rows.append((wd[dt.weekday()].upper(), s["date"][5:].replace("-", "/"), lifts))
+    for k in o:
+        if k not in n:
+            rows.append(("del", k, o[k], ""))
+        elif o[k] != n[k]:
+            rows.append(("chg", k, o[k], n[k]))
+    for k in n:
+        if k not in o:
+            rows.append(("add", k, "", n[k]))
+    return rows
 
-    diff_rows = []
-    if old_doc:
-        o, n = flat(old_doc), flat(doc)
-        for k in o:
-            if k not in n:
-                diff_rows.append(("del", k, o[k], ""))
-            elif o[k] != n[k]:
-                diff_rows.append(("chg", k, o[k], n[k]))
-        for k in n:
-            if k not in o:
-                diff_rows.append(("add", k, "", n[k]))
 
-    h1 = sess_h(rows) if want_prog else 0
-    h2 = (34 + 30 + len(diff_rows) * 26 + 52) if (diff_rows and want_diff) else 0
-    H = 28 + h1 + (22 if h1 else 0) + h2 + 6
+def draw_diff(d, pid, rows, y, x0, x1):
+    h = 34 + 30 + len(rows) * 26 + 46
+    d.rounded_rectangle([L, y, R, y + h], 16, fill=CARD, outline=LINE)
+    t = y + PAD
+    d.text((x0, t), "Proposed change", font=font(14, 600), fill=TXT)
+    d.text((x1, t + 2), f"data/programs/{pid}.json", font=font(10), fill=DIM,
+           anchor="ra")
+    xs = [x0 + 14, x0 + 100, x0 + 268, x0 + 452]
+    ry = t + 26
+    d.rounded_rectangle([x0, ry, x1, ry + 26], 8, fill=HDRBG)
+    for x, c in zip(xs, ["DATE", "EXERCISE", "WAS", "NOW"]):
+        d.text((x, ry + 13), c, font=font(9.5, 600), fill=DIM, anchor="lm")
+    ry += 26
+    for kind, (date, name), ov, nv in rows:
+        bg = {"add": "#12261D", "del": "#2A1618", "chg": "#1E1C14"}.get(kind)
+        if bg:
+            d.rectangle([x0, ry, x1, ry + 26], fill=bg)
+        sg = {"add": "+", "del": "\u2212", "chg": "~"}[kind]
+        col = {"add": UP, "del": DOWN, "chg": WARN}[kind]
+        d.text((x0 + 2, ry + 13), sg, font=font(11, 700), fill=col, anchor="lm")
+        d.text((xs[0], ry + 13), date[5:], font=font(10.5, 400, mono=True),
+               fill=DOWN if kind == "del" else TXT, anchor="lm")
+        d.text((xs[1], ry + 13), name, font=fit(d, name, 160, 10.5), fill=TXT,
+               anchor="lm")
+        d.text((xs[2], ry + 13), ov, font=font(10, 400, mono=True),
+               fill=DIM if kind == "add" else DOWN, anchor="lm")
+        d.text((xs[3], ry + 13), nv, font=font(10, 400, mono=True),
+               fill=DIM if kind == "del" else UP, anchor="lm")
+        ry += 26
+    ry += 14
+    na = sum(1 for r in rows if r[0] == "add")
+    nd = sum(1 for r in rows if r[0] == "del")
+    nc = sum(1 for r in rows if r[0] == "chg")
+    d.text((x0, ry), f"{nc} changed \u00b7 {na} added \u00b7 {nd} removed",
+           font=font(10.5), fill=DIM)
+    d.text((x1, ry), f"+{na}  ~{nc}  \u2212{nd}", font=font(10.5, 500),
+           fill=DIM, anchor="ra")
+    return h
+
+
+# -------------------------------------------------------------------- render
+
+def render(pid, doc, old_doc, out_path):
+    rows = rows_of(doc)
+    weeks = sorted({r["week"] for r in rows})
+    gap = 10
+    ncols = max(len([r for r in rows if r["week"] == w]) for w in weeks)
+    x0, x1 = L + PAD, R - PAD
+    cw = (x1 - x0 - gap * (ncols - 1)) // ncols
+    heights = {w: max(sess_h(r) for r in rows if r["week"] == w) for w in weeks}
+
+    drows = diff_rows_of(old_doc, doc) if old_doc else []
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    y = 28
 
-    if want_prog:
-        d.rounded_rectangle([16, y, W - 16, y + h1], 18, fill=CARD, outline=LINE, width=1)
-        t = y + PAD
-        d.text((L, t), doc["name"], font=font(22, 600), fill=TXT)
-        d.text((L, t + 33), sub, font=font(12, 400), fill=DIM)
-        if tag:
-            pw = tw(d, tag, font(11, 500)) + 20
-            d.rounded_rectangle([R - pw, t - 2, R, t + 22], 11, fill="#161c2b",
-                                outline="#2c3550", width=1)
-            d.text((R - pw / 2, t + 10), tag, font=font(11, 500), fill=ACCENT, anchor="mm")
-        ty = t + 60
-        d.line([L, ty, R, ty], fill=LINE, width=1)
-        ty += 14
-        for i, (day, date, lifts) in enumerate(rows):
-            ly = draw_session(d, ty, day, date, lifts)
-            if i < len(rows) - 1:
-                d.line([L, ly + 8, R, ly + 8], fill=SOFT, width=1)
-            ty = ly + SEP
-        y += h1 + 22
+    d.text((x0, 30), doc["name"], font=font(20, 600), fill=TXT)
+    ds = [r["date"] for r in rows]
+    d.text((x0, 58), f"{ds[0]} \u2013 {ds[-1]}", font=font(11), fill=DIM)
+    d.text((x1, 58), f"{len(rows)} sessions", font=font(11), fill=DIM, anchor="ra")
+    d.line([x0, 82, x1, 82], fill=LINE, width=2)
 
-    if h2:
-        d.rounded_rectangle([16, y, W - 16, y + h2], 18, fill=CARD, outline=LINE, width=1)
-        t = y + PAD
-        d.text((L, t), "Proposed change", font=font(15, 600), fill=TXT)
-        rel = f"data/programs/{pid}.json"
-        d.text((L + tw(d, "Proposed change", font(15, 600)) + 9, t + 3), rel,
-               font=font(12, 400), fill=DIM)
-        xs = [L + 16, L + 118, L + 292, L + 470, L + 636]
-        cols = ["SESSION", "EXERCISE", "SCHEME / WEIGHT", "", "NEW"]
-        ry = t + 32
-        d.rounded_rectangle([L, ry, R, ry + 28], 8, fill="#1c2029")
-        for x, c in zip(xs, cols):
-            if c:
-                d.text((x, ry + 14), c, font=font(11, 500), fill=DIM, anchor="lm")
-        ry += 28
-        for kind, (date, name), ov, nv in diff_rows:
-            bg = {"add": "#12261d", "del": "#2a1618", "chg": "#1e1c14"}.get(kind)
-            if bg:
-                d.rectangle([L, ry, R, ry + 26], fill=bg)
-            sg = {"add": "+", "del": "\u2212", "chg": "~"}[kind]
-            col = {"add": UP, "del": DOWN, "chg": "#e0b341"}[kind]
-            d.text((L + 2, ry + 13), sg, font=font(12, 600), fill=col, anchor="lm")
-            d.text((xs[0], ry + 13), date, font=font(12, 400, mono=True),
-                   fill=DOWN if kind == "del" else TXT, anchor="lm")
-            d.text((xs[1], ry + 13), name, font=font(12, 400), fill=TXT, anchor="lm")
-            d.text((xs[2], ry + 13), ov, font=font(12, 400, mono=True),
-                   fill=DIM if kind == "add" else DOWN, anchor="lm")
-            d.text((xs[4], ry + 13), nv, font=font(12, 400, mono=True),
-                   fill=DIM if kind == "del" else UP, anchor="lm")
-            ry += 26
-        ry += 16
-        na = sum(1 for r in diff_rows if r[0] == "add")
-        nd = sum(1 for r in diff_rows if r[0] == "del")
-        nc = sum(1 for r in diff_rows if r[0] == "chg")
-        d.text((L, ry), f"{len(diff_rows)} lifts  \u00b7  {nc} changed  \u00b7  {na} added  \u00b7  {nd} removed",
-               font=font(12, 400), fill=DIM)
-        d.text((R, ry), f"+{na}  ~{nc}  \u2212{nd}", font=font(12, 500), fill=DIM, anchor="ra")
+    y = 92
+    for w in weeks:
+        wr = sorted([r for r in rows if r["week"] == w], key=lambda r: r["d"])
+        draw_week_row(d, x0, x1, y, wr, cw, gap)
+        y += 28 + heights[w] + gap
 
-    img.save(out_path, "PNG", optimize=True)
-    return out_path, img.size
+    if drows:
+        draw_diff(d, pid, drows, y + 4, x0, x1)
+
+    finish(img, BG).save(out_path, "PNG", optimize=True)
+    return out_path
 
 
 def main():
-    args = [a for a in sys.argv[1:]]
+    args = sys.argv[1:]
     if not args:
         print(__doc__)
         sys.exit(2)
     pid = args[0]
-    want_diff = "--diff" in args
-    out = None
-    if "--out" in args:
-        out = args[args.index("--out") + 1]
+    out = args[args.index("--out") + 1] if "--out" in args else None
     if out is None:
-        os.makedirs(os.path.join(ROOT, ".cache"), exist_ok=True)
-        out = os.path.join(ROOT, ".cache", f"{pid}.png")
+        os.makedirs(CACHE, exist_ok=True)
+        out = os.path.join(CACHE, f"{pid}.png")
 
-    only = None
-    if "--only" in args:
-        only = args[args.index("--only") + 1]  # 'program' | 'diff'
-
-    pf = load(pid)
-    doc = pf["doc"]
+    doc = json.load(open(os.path.join(ROOT, "data", "programs", f"{pid}.json")))["doc"]
     old = None
-    if want_diff:
+    if "--diff" in args:
         try:
-            raw = git("show", f"HEAD:programs/{pid}.json")
-            old = json.loads(raw)["doc"]
+            old = json.loads(git("show", f"HEAD:programs/{pid}.json"))["doc"]
         except subprocess.CalledProcessError:
             print("(no HEAD version to diff against)", file=sys.stderr)
-    path_, size = render(pid, doc, old, out, only=only)
-    print(path_, size[0], "x", size[1], os.path.getsize(path_), "bytes")
+    p = render(pid, doc, old, out)
+    print(p, Image.open(p).size, os.path.getsize(p), "bytes")
 
 
 if __name__ == "__main__":
