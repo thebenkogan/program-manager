@@ -5,14 +5,20 @@ Render a coach program to a PNG card for WhatsApp.
 Usage:
     python3 scripts/render_card.py <programId> [--diff] [--out path.png]
 
+Default output is the PROGRAM ONLY: what the block will look like once the
+pending change is applied. That is what Ben wants by default.
+--diff additionally writes .cache/<programId>-diff.png with a change table.
+Do NOT put the diff table on the program card -- Ben rejected that.
+
 Default layout (Ben's chosen format): PORTRAIT week-rows. Each week is a
 horizontal band; its sessions sit side by side inside it, Mon/Wed/Sat left to
 right. Every lift gets a tinted strip; a backoff renders as a dimmer nested
 sub-strip beneath its top set. ~700px wide, ~1000px tall for a 4-week block.
 
---diff  append a "Proposed change" card comparing the working tree against
-        HEAD in the nested data/ repo. MUST be run BEFORE committing, or there
-        is nothing to diff against.
+`--diff` writes a SECOND image, .cache/<programId>-diff.png, comparing the
+        working tree against HEAD in the nested data/ repo. Run it BEFORE
+        committing or there is nothing to diff against. Optional -- Ben
+        usually just wants the program card.
 
 Self-contained: Pillow + the vendored variable fonts in assets/fonts/. No
 browser, no system fonts. Chromium on this box is broken (missing libatk), so
@@ -277,14 +283,19 @@ def main():
         out = os.path.join(CACHE, f"{pid}.png")
 
     doc = json.load(open(os.path.join(ROOT, "data", "programs", f"{pid}.json")))["doc"]
-    old = None
+    p = render(pid, doc, None, out)
+    print(p, Image.open(p).size, os.path.getsize(p), "bytes")
+
     if "--diff" in args:
         try:
             old = json.loads(git("show", f"HEAD:programs/{pid}.json"))["doc"]
         except subprocess.CalledProcessError:
-            print("(no HEAD version to diff against)", file=sys.stderr)
-    p = render(pid, doc, old, out)
-    print(p, Image.open(p).size, os.path.getsize(p), "bytes")
+            print("(no HEAD version to diff against -- skipping diff image)",
+                  file=sys.stderr)
+            return
+        dp = render(pid, doc, old,
+                    os.path.join(CACHE, f"{pid}-diff.png"))
+        print(dp, Image.open(dp).size, os.path.getsize(dp), "bytes")
 
 
 if __name__ == "__main__":
