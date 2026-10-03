@@ -192,9 +192,11 @@ python3 scripts/render_card.py <programId>           # default: program card onl
 python3 scripts/render_card.py <programId> --diff    # optional: separate <id>-diff.png
 ```
 
-Output is `.cache/<programId>.png` — send it as a `MEDIA:` path. The card
-shows the program AS IT WILL LOOK once the change is applied; that is the
-whole point. Never append a diff table to it. The layout (portrait week-rows,
+Output is `.cache/<programId>.png` — send it as a `MEDIA:` path, but ONLY if
+the run printed `self-check: OK`. The renderer self-checks for text overflow,
+clipped boxes, oversized content and ragged week rows, and writes no png if
+anything fails. Ben has authorised skipping a separate visual check; rely on
+the self-check. Re-run `bun run render:test` after touching the renderer. The layout (portrait week-rows,
 that week's sessions side by side, tinted lift strips, backoff as a nested
 sub-strip) is Ben's chosen format. Do not redesign it unasked, and do not
 fall back to landscape week-columns.
