@@ -188,13 +188,16 @@ and send a card; never fall back to a text diff unless he asks.
 
 ```bash
 cd /home/benkogan/code/coach
-python3 scripts/render_card.py <programId> --diff   # run BEFORE committing
+python3 scripts/render_card.py <programId>           # default: program card only
+python3 scripts/render_card.py <programId> --diff    # optional: separate <id>-diff.png
 ```
 
-Output is `.cache/<programId>.png` — send it as a `MEDIA:` path. The layout
-(portrait week-rows, that week's sessions side by side, tinted lift strips,
-backoff as a nested sub-strip) is Ben's chosen format. Do not redesign it
-unasked, and do not fall back to landscape week-columns.
+Output is `.cache/<programId>.png` — send it as a `MEDIA:` path. The card
+shows the program AS IT WILL LOOK once the change is applied; that is the
+whole point. Never append a diff table to it. The layout (portrait week-rows,
+that week's sessions side by side, tinted lift strips, backoff as a nested
+sub-strip) is Ben's chosen format. Do not redesign it unasked, and do not
+fall back to landscape week-columns.
 
 ## Pending message style
 
