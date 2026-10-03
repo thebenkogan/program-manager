@@ -267,7 +267,9 @@ def render(pid, doc, old_doc, out_path):
     if drows:
         draw_diff(d, pid, drows, y + 4, x0, x1)
 
-    finish(img, BG).save(out_path, "PNG", optimize=True)
+    # compress_level=1, not optimize=True: optimize costs ~104ms vs ~9ms
+    # for ~13KB more on a 76KB file. Irrelevant over WhatsApp.
+    finish(img, BG).save(out_path, "PNG", compress_level=1)
     return out_path
 
 
