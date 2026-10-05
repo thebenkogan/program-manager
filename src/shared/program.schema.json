@@ -48,8 +48,26 @@
         "backoff": { "type": "string" },
         "supersetWith": { "type": "string" },
         "notes": { "type": "string" },
+        "progressionGroup": { "type": "string", "minLength": 1 },
+        "intensityFormula": { "$ref": "#/$defs/intensityFormula" },
         "coachNote": { "type": "string" }
       }
+    },
+    "intensityFormula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceScope", "factor", "roundToLb"],
+      "properties": {
+        "sourceExercise": { "type": "string", "minLength": 1 },
+        "sourceProgressionGroup": { "type": "string", "minLength": 1 },
+        "sourceScope": { "enum": ["sameWeek", "previous"] },
+        "factor": { "type": "number", "exclusiveMinimum": 0 },
+        "roundToLb": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "oneOf": [
+        { "required": ["sourceExercise"], "not": { "required": ["sourceProgressionGroup"] } },
+        { "required": ["sourceProgressionGroup"], "not": { "required": ["sourceExercise"] } }
+      ]
     }
   }
 }
