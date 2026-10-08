@@ -37,9 +37,14 @@ export interface ClientSession {
 }
 
 /** Resolves the request's session cookie to a client. Returns null when signed out or the client is unknown. */
+const ABSOLUTE_SESSION_MS = 30 * 24 * 60 * 60 * 1000
+
 export async function getClientId(request: Request): Promise<ClientSession | null> {
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session) return null
+  // Better Auth slides expiry on use; cap total lifetime so a stolen cookie cannot live forever.
+  const createdAt = new Date(session.session.createdAt).getTime()
+  if (Date.now() - createdAt > ABSOLUTE_SESSION_MS) return null
   const clientId = (session.user as { clientId?: unknown }).clientId
   if (typeof clientId !== 'string') return null
   const client = findClient(clientId)

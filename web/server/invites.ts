@@ -29,6 +29,7 @@ export function findClient(clientId: string): ClientRecord | null {
 
 
 export const MIN_PASSWORD_LENGTH = 8
+export const MAX_PASSWORD_LENGTH = 128
 
 export interface CreatedInvite {
   token: string
@@ -108,6 +109,9 @@ export async function redeemInvite(token: string, password: string, request: Req
   if (password.length < MIN_PASSWORD_LENGTH) {
     return jsonError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return jsonError(400, `Password must be at most ${MAX_PASSWORD_LENGTH} characters`)
+  }
 
   // Single conditional UPDATE: Postgres re-checks the WHERE clause on the locked row, so exactly one
   // concurrent caller gets a row back.
@@ -150,6 +154,11 @@ export async function redeemInvite(token: string, password: string, request: Req
           accountId: user.id,
           password: hash,
         })
+      }
+      // A password reset must evict every existing session, including one an attacker may hold.
+      const existingSessions = await ctx.internalAdapter.listSessions(user.id)
+      if (existingSessions.length > 0) {
+        await ctx.internalAdapter.deleteSessions(existingSessions.map((s) => s.token))
       }
       const signIn = await auth.api.signInEmail({
         body: { email: invite.email, password },

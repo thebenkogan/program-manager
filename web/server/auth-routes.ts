@@ -11,6 +11,21 @@ const AUTH_ALLOWLIST = new Set([
 ])
 
 const INVITE_PATH = /^\/api\/invites\/([^/]+)$/
+const MAX_BODY_BYTES = 8 * 1024
+
+/** Browsers can send a cross-site form as text/plain without a preflight. Requiring JSON blocks that. */
+function isJsonRequest(request: Request): boolean {
+  const type = request.headers.get('content-type') ?? ''
+  return type.split(';')[0].trim().toLowerCase() === 'application/json'
+}
+
+/** A browser always sends Origin on cross-site POSTs. Reject any origin other than our own. */
+function originAllowed(request: Request): boolean {
+  const origin = request.headers.get('origin')
+  if (!origin) return true
+  const own = process.env.BETTER_AUTH_URL
+  return own !== undefined && origin === new URL(own).origin
+}
 
 function json(status: number, body: unknown): Response {
   return Response.json(body, { status })
@@ -28,9 +43,13 @@ export async function handleAuthRoutes(request: Request): Promise<Response | nul
 
   if (pathname === '/api/invites/redeem') {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' })
+    if (!originAllowed(request)) return json(403, { error: 'Forbidden' })
+    if (!isJsonRequest(request)) return json(415, { error: 'Content-Type must be application/json' })
+    const raw = await request.text()
+    if (raw.length > MAX_BODY_BYTES) return json(413, { error: 'Request too large' })
     let body: unknown
     try {
-      body = await request.json()
+      body = JSON.parse(raw)
     } catch {
       return json(400, { error: 'Invalid JSON' })
     }
