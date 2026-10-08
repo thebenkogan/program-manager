@@ -7,7 +7,10 @@
     "build": "vite build",
     "validate": "bun run scripts/validate.ts",
     "render:test": "python3 scripts/test_render_card.py",
-    "seed-data": "bun run scripts/seed-data.ts"
+    "seed-data": "bun run scripts/seed-data.ts",
+    "skip-workout": "bun run scripts/skip.ts",
+    "defer-workout": "bun run scripts/defer.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

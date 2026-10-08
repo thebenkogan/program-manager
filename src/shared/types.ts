@@ -8,6 +8,18 @@ export interface Exercise {
   supersetWith?: string
   notes?: string
   coachNote?: string
+  /** Optional link for lifts that share a counter or distinguish same-name variants. */
+  progressionGroup?: string
+  /** Optional formula for a derived load, e.g. a light squat percentage. */
+  intensityFormula?: IntensityFormula
+}
+
+export interface IntensityFormula {
+  sourceExercise?: string
+  sourceProgressionGroup?: string
+  sourceScope: 'sameWeek' | 'previous'
+  factor: number
+  roundToLb: number
 }
 
 export interface Session {

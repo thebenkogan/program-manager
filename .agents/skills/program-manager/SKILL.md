@@ -15,10 +15,16 @@ You are the API for a local training-coach app. When the user asks for a program
 ## Data layout
 
 - `data/clients.json` — clients (each has `id`, `name`).
-- `data/programs/{id}.json` — one file per client, shape `{ id, clientId, doc }`.
-- `data/state/pending/{id}.json` — gitignored Apply-box default message,
-  shape `{ "message": "..." }`.
-- `data/state/sync/{id}.json` — gitignored Google Calendar sync state.
+- `data/programs/{programId}.json` — one file per client, shape
+  `{ id, clientId, doc }`.
+- `data/state/pending/{programId}.json` — gitignored Apply-box default
+  message, shape `{ "message": "..." }`.
+- `data/state/sync/{programId}.json` — gitignored calendar sync state.
+
+Use the program file's `id` (the filename stem) for pending/sync paths, not
+the client's `clientId`. For example, Tanya's program is
+`tanya-starting-strength`, even though her client id is `tanya`. The headless
+sync script looks up the pending message by program id.
 
 Each client has exactly one program. Replacing the file replaces the
 program; old versions live in git history.
@@ -58,6 +64,10 @@ Exercise:
 - `supersetWith?`: string.
 - `notes?`: keep empty unless the user says otherwise.
 - `coachNote?`: coaching cue, shown under the exercise in calendar events.
+- Optional missed-workout exceptions: `progressionGroup` links different
+  exercise names that share one progression counter, or separates same-name
+  lifts with independent counters. `intensityFormula` records a derived load.
+  Ordinary lifts need no extra metadata; the scripts match them by exercise name.
 
 ## Creating a program
 
@@ -85,7 +95,8 @@ Exercise:
 5. Keep exercise `notes` empty unless the user says otherwise. Reuse the
    existing exercise names when editing; when creating, prefer the names
    already used in `data/programs` (e.g. `High Bar Back Squat`).
-6. Verify weekdays, validate, write the pending message, then STOP.
+6. Add optional `progressionGroup` tags only for shared counters or same-name lifts with separate counters. Add `intensityFormula` only for derived loads (e.g. light squat from heavy squat). Ordinary same-name progressions require no extra metadata.
+7. Verify weekdays, validate, write the pending message, then STOP.
 
 ## Math rules
 
@@ -116,6 +127,37 @@ Document the matching rule in `doc.notes` whenever you use one.
 - **Deload/reset:** state the percentage and scope; sessions use the
   already-deloaded numbers.
   Example: `10% deload from vacation.`
+
+## Missed workout commands
+
+Use separate deterministic commands; both write a proposed program + pending
+message only. They never commit or sync the calendar:
+
+```bash
+bun run skip-workout <programId> <YYYY-MM-DD> [--dry-run]
+bun run defer-workout <programId> <YYYY-MM-DD> [--dry-run]
+```
+
+- `skip-workout`: removes that dated session and shifts the concrete
+  `sets`/`reps`/`intensity`/`backoff` values forward through later occurrences
+  of the same exercise name. `progressionGroup` is optional and only needed
+  when differently named lifts share a counter (e.g. clean and clean & jerk) or
+  same-name lifts need separate counters.
+- `defer-workout`: moves the target workout to the next scheduled date and
+  shifts later sessions into the next existing dates, preserving gaps. It
+  infers the recurring weekdays from the program's dated sessions to append one
+  final slot. Update weekday titles, start date/weeks, and formula-derived loads.
+- `intensityFormula` is optional and only for derived loads. It names exactly
+  one source (`sourceExercise` or `sourceProgressionGroup`), a `sourceScope`
+  (`sameWeek` or `previous`), `factor`, and `roundToLb`. Use it for cases such
+  as light squat loads derived from heavy squat.
+- When shared counters or derived loads are in the human-readable notes, add
+  the corresponding optional metadata so scripts can handle those exceptions
+  deterministically. Ordinary same-name progressions require no annotations.
+  For a legacy program missing exception metadata, prepare and apply that small
+  metadata-only update first; the command refuses dirty program files.
+- Commands fail closed on malformed formulas, dirty program files, or an
+  existing pending proposal. `--dry-run` prints the proposal without writing.
 
 ## Alternation rule
 
@@ -152,8 +194,9 @@ pwd && bun -e 'for (const d of ["2026-08-03","2026-08-05","2026-08-08"]) console
 pwd && bun run validate
 ```
 
-3. Write the pending message to `data/state/pending/{id}.json` as
-   `{ "message": "..." }` (gitignored Apply-box default text).
+3. Write the pending message to
+   `data/state/pending/{programId}.json` (where `programId` is the program
+   file's `id`, not `clientId`) as `{ "message": "..." }`.
 4. STOP. Leave the working tree dirty for user review.
 5. Never run `git commit` or `git add` on program files on your own
    initiative. The uncommitted file is what the UI renders as a proposed
@@ -168,18 +211,25 @@ the UI, via:
 
 ```bash
 cd /home/benkogan/code/coach
-bun run scripts/sync-program.ts <programId> --dry-run   # show diff, change nothing
-bun run scripts/sync-program.ts <programId>             # commit with the pending message, then resync calendar
+bun run scripts/sync-program.ts <programId> --dry-run   # inspect diff + pending message
+bun run scripts/sync-program.ts <programId>             # commit + resync calendar
 ```
 
 The script validates, commits the program file using the pending message
 as the commit message (so Versions history stays meaningful), then calls
-`resyncProgram()` and writes `data/state/sync/{id}.json`. It mirrors the
+`resyncProgram()` and writes `data/state/sync/{programId}.json`. It mirrors the
 UI's Apply + Resync. Commit must precede resync — the API rejects a
 resync while a pending diff exists.
 
 Always show Ben the diff (dry run) and get explicit approval before the
 non-dry run.
+
+Check the dry-run `message:` line before applying: it must be the intended
+changelog text. If it says the generic `Update program <name>`, the pending
+file was not found under the program id; fix the filename and rerun the dry
+run. After syncing, verify the affected Google Calendar events by fetching
+their event IDs from `data/state/sync/{programId}.json` and checking the
+exercise lines and weights in each event description.
 
 ### Card renderer — the default way to show Ben a change
 
@@ -188,8 +238,8 @@ and send a card; never fall back to a text diff unless he asks.
 
 ```bash
 cd /home/benkogan/code/coach
-python3 scripts/render_card.py <programId>           # default: program card only
-python3 scripts/render_card.py <programId> --diff    # optional: separate <id>-diff.png
+uv run --with Pillow python scripts/render_card.py <programId>         # program card only
+uv run --with Pillow python scripts/render_card.py <programId> --diff  # optional separate diff image
 ```
 
 Output is `.cache/<programId>.png` — send it as a `MEDIA:` path, but ONLY if
