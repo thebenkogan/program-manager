@@ -80,3 +80,12 @@ export function passwordError(password: string, confirm: string): string | null 
   if (password !== confirm) return 'Passwords do not match.'
   return null
 }
+
+/** Validates sign-in input before any request: returns an error message, or null when valid. */
+export function signInError(email: string, password: string): string | null {
+  const trimmed = email.trim()
+  if (!trimmed) return 'Enter your email.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return 'Enter a valid email address.'
+  if (!password) return 'Enter your password.'
+  return null
+}

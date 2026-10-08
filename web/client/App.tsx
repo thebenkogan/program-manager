@@ -1,10 +1,11 @@
-import { lazy, Suspense, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { Shell } from './Shell'
 import { InvitePage } from './InvitePage'
 import { SignInPage } from './SignInPage'
 import { NextPage } from './NextPage'
 import { LandingPage } from './LandingPage'
 import { useFetch, endpoints, type MeResponse } from './api'
+import { hasSessionHint, setSessionHint } from './session-hint'
 import { ProgramPage } from './ProgramPage'
 import { Link, matchPath, usePathname } from './router'
 import { Card, PageTitle, Muted, Page } from './components'
@@ -32,7 +33,18 @@ function resolve(pathname: string): Route {
 
 /** Home: the next workout when signed in, the public landing page when not. */
 function HomeRoute() {
+  // No hint cookie means no session: show the landing page without calling the API.
+  if (!hasSessionHint()) return <LandingPage />
+  return <HintedHome />
+}
+
+/** Hinted visitors: confirm the session. A 401 means it expired, so clear the hint. */
+function HintedHome() {
   const me = useFetch<MeResponse>(endpoints.me, { auth: false })
+  const expired = me.error?.status === 401
+  useEffect(() => {
+    if (expired) setSessionHint(false)
+  }, [expired])
   if (me.loading) return <p className="py-10 text-center text-sm text-zinc-500">Loading…</p>
   if (me.data) {
     return (

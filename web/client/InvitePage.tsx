@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { apiPost, useFetch } from './api'
 import { navigate } from './router'
+import { setSessionHint } from './session-hint'
 import { passwordError } from './format'
 import { Card, ErrorBox, Field, Muted, Page, PageTitle, Spinner, SubmitButton } from './components'
 
@@ -32,6 +33,7 @@ export function InvitePage({ token }: { token: string }) {
     setSubmitting(true)
     try {
       await apiPost('/api/invites/redeem', { token, password })
+      setSessionHint(true)
       navigate('/', { replace: true })
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Something went wrong. Try again.')

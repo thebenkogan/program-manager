@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { authClient } from './auth'
+import { signInError } from './format'
+import { setSessionHint } from './session-hint'
 import { navigate } from './router'
 import { Card, Field, Muted, Page, PageTitle, SubmitButton } from './components'
 
@@ -14,6 +16,11 @@ export function SignInPage() {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const problem = signInError(email, password)
+    if (problem) {
+      setError(problem)
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -23,6 +30,7 @@ export function SignInPage() {
         setSubmitting(false)
         return
       }
+      setSessionHint(true)
       navigate('/', { replace: true })
     } catch {
       setError('Sign-in failed. Check your connection and try again.')

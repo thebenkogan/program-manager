@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { authClient } from './auth'
+import { setSessionHint } from './session-hint'
 import { Link, navigate, usePathname } from './router'
 import { cn } from './components'
 import { useFetch, endpoints, type MeResponse } from './api'
@@ -21,6 +22,7 @@ export function Shell({ children }: { children: ReactNode }) {
     try {
       await authClient.signOut()
     } finally {
+      setSessionHint(false)
       setSigningOut(false)
       navigate('/signin', { replace: true })
     }

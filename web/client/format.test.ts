@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  signInError,
   formatChange,
   formatDate,
   formatLongDate,
@@ -79,5 +80,17 @@ describe('passwordError', () => {
     expect(passwordError('short', 'short')).toBe('Password must be at least 8 characters.')
     expect(passwordError('longenough', 'different')).toBe('Passwords do not match.')
     expect(passwordError('longenough', 'longenough')).toBeNull()
+  })
+})
+
+describe('signInError', () => {
+  test('requires email and password before any request', () => {
+    expect(signInError('', 'x')).toBe('Enter your email.')
+    expect(signInError('   ', 'x')).toBe('Enter your email.')
+    expect(signInError('a@b', '')).toBe('Enter a valid email address.')
+    expect(signInError('benkogan9@gmail.com', '')).toBe('Enter your password.')
+  })
+  test('accepts a well-formed email with a password', () => {
+    expect(signInError(' benkogan9@gmail.com ', 'pw')).toBeNull()
   })
 })
