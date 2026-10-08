@@ -3,6 +3,8 @@ import { Shell } from './Shell'
 import { InvitePage } from './InvitePage'
 import { SignInPage } from './SignInPage'
 import { NextPage } from './NextPage'
+import { LandingPage } from './LandingPage'
+import { useFetch, endpoints, type MeResponse } from './api'
 import { ProgramPage } from './ProgramPage'
 import { Link, matchPath, usePathname } from './router'
 import { Card, PageTitle, Muted, Page } from './components'
@@ -28,6 +30,20 @@ function resolve(pathname: string): Route {
   return { kind: 'notFound' }
 }
 
+/** Home: the next workout when signed in, the public landing page when not. */
+function HomeRoute() {
+  const me = useFetch<MeResponse>(endpoints.me, { auth: false })
+  if (me.loading) return <p className="py-10 text-center text-sm text-zinc-500">Loading…</p>
+  if (me.data) {
+    return (
+      <Protected>
+        <NextPage />
+      </Protected>
+    )
+  }
+  return <LandingPage />
+}
+
 function Protected({ children }: { children: ReactNode }) {
   return <Shell>{children}</Shell>
 }
@@ -40,11 +56,7 @@ export function App() {
     case 'signin':
       return <SignInPage />
     case 'next':
-      return (
-        <Protected>
-          <NextPage />
-        </Protected>
-      )
+      return <HomeRoute />
     case 'program':
       return (
         <Protected>
