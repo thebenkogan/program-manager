@@ -3,7 +3,7 @@
 Render a coach program to a PNG card for WhatsApp.
 
 Usage:
-    python3 scripts/render_card.py <programId> [--diff] [--out path.png]
+    uv run --with Pillow python scripts/render_card.py <programId> [--diff] [--out path.png]
 
 Default output is the PROGRAM ONLY: what the block will look like once the
 pending change is applied. That is what Ben wants by default.
@@ -333,8 +333,11 @@ def render(pid, doc, old_doc, out_path):
 
     if not rows:
         VIOLATIONS.append("program has no sessions")
+    # Short week rows are legitimate: a calendar week can hold fewer than
+    # ncols sessions (e.g. a session shifted forward off the block boundary).
+    # Column width already tracks the fullest week; only flag overflow.
     ncols_actual = {w: len([r for r in rows if r["week"] == w]) for w in weeks}
-    if len(set(ncols_actual.values())) != 1:
+    if any(n > ncols for n in ncols_actual.values()):
         VIOLATIONS.append(f"ragged week rows: {ncols_actual}")
 
     img = Image.new("RGB", (W, H), BG)
