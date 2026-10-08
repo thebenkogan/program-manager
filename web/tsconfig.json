@@ -25,6 +25,7 @@
     "client",
     "shared",
     "scripts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "drizzle.config.ts"
   ]
 }

@@ -1,13 +1,19 @@
 // Better Auth instance: email + password only, no verification, no reset, no social providers.
 // Public sign-up is blocked at the HTTP layer (see auth-routes.ts); accounts are created only by redeemInvite.
+// Storage: Better Auth's Drizzle adapter over server/schema.ts (user, session, account, verification).
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
-import { pool } from './db'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { db } from './db'
 import { findClient } from './invites'
+import { account, session, user, verification } from './schema'
 
 export const authOptions = {
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
-  database: pool,
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: { user, session, account, verification },
+  }),
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,

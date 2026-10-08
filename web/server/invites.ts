@@ -3,7 +3,9 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { hashPassword } from 'better-auth/crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { pool } from './db'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
+import { db } from './db'
+import { invites } from './schema'
 
 export interface ClientRecord {
   id: string
@@ -56,29 +58,33 @@ export async function createInvite(clientId: string, email: string): Promise<Cre
 
   const normalized = normalizeEmail(email)
   const token = randomBytes(32).toString('base64url')
-  const { rows } = await pool.query<{ expires_at: Date }>(
-    `INSERT INTO invites (id, token_hash, client_id, email, created_at, expires_at)
-     VALUES ($1, $2, $3, $4, now(), now() + interval '7 days')
-     RETURNING expires_at`,
-    [randomUUID(), hashToken(token), clientId, normalized],
-  )
-  const expiresAt = rows[0].expires_at
-  return { token, url: `${baseUrl.replace(/\/$/, '')}/invite/${token}`, expiresAt }
+  // Expiry is computed on the database clock, the same clock redeem and inspect compare against.
+  const [row] = await db
+    .insert(invites)
+    .values({
+      id: randomUUID(),
+      tokenHash: hashToken(token),
+      clientId,
+      email: normalized,
+      createdAt: sql`now()`,
+      expiresAt: sql`now() + interval '7 days'`,
+    })
+    .returning({ expiresAt: invites.expiresAt })
+  return { token, url: `${baseUrl.replace(/\/$/, '')}/invite/${token}`, expiresAt: row.expiresAt }
 }
 
 /** Public, read-only check used by the invite page. Never returns the token or hash. */
 export async function inspectInvite(token: string): Promise<InviteInspection> {
   if (typeof token !== 'string' || token.length === 0 || token.length > 256) return { valid: false }
-  const { rows } = await pool.query<{ email: string; client_id: string; expires_at: Date }>(
-    `SELECT email, client_id, expires_at FROM invites
-     WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
-    [hashToken(token)],
-  )
-  const row = rows[0]
+  const [row] = await db
+    .select({ email: invites.email, clientId: invites.clientId, expiresAt: invites.expiresAt })
+    .from(invites)
+    .where(and(eq(invites.tokenHash, hashToken(token)), isNull(invites.usedAt), gt(invites.expiresAt, sql`now()`)))
+    .limit(1)
   if (!row) return { valid: false }
-  const client = findClient(row.client_id)
+  const client = findClient(row.clientId)
   if (!client) return { valid: false }
-  return { valid: true, email: row.email, clientName: client.name, expiresAt: row.expires_at }
+  return { valid: true, email: row.email, clientName: client.name, expiresAt: row.expiresAt }
 }
 
 function jsonError(status: number, error: string): Response {
@@ -103,19 +109,19 @@ export async function redeemInvite(token: string, password: string, request: Req
     return jsonError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   }
 
-  const claim = await pool.query<{ id: string; client_id: string; email: string }>(
-    `UPDATE invites SET used_at = now()
-     WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-     RETURNING id, client_id, email`,
-    [hashToken(token)],
-  )
-  const invite = claim.rows[0]
+  // Single conditional UPDATE: Postgres re-checks the WHERE clause on the locked row, so exactly one
+  // concurrent caller gets a row back.
+  const [invite] = await db
+    .update(invites)
+    .set({ usedAt: sql`now()` })
+    .where(and(eq(invites.tokenHash, hashToken(token)), isNull(invites.usedAt), gt(invites.expiresAt, sql`now()`)))
+    .returning({ id: invites.id, clientId: invites.clientId, email: invites.email })
   if (!invite) return jsonError(400, 'Invite is invalid, expired, or already used')
 
-  const release = () => pool.query(`UPDATE invites SET used_at = NULL WHERE id = $1`, [invite.id])
+  const release = () => db.update(invites).set({ usedAt: null }).where(eq(invites.id, invite.id))
 
   try {
-    const client = findClient(invite.client_id)
+    const client = findClient(invite.clientId)
     if (!client) {
       await release()
       return jsonError(400, 'Invite is invalid, expired, or already used')
@@ -128,7 +134,7 @@ export async function redeemInvite(token: string, password: string, request: Req
 
     if (existing) {
       const user = existing.user as { id: string; clientId?: unknown }
-      if (user.clientId !== invite.client_id) {
+      if (user.clientId !== invite.clientId) {
         await release()
         return jsonError(403, 'This invite cannot be used for this account')
       }
@@ -154,7 +160,7 @@ export async function redeemInvite(token: string, password: string, request: Req
         await release()
         return jsonError(500, 'Could not sign in')
       }
-      return withCookiesFrom(signIn, { ok: true, clientId: invite.client_id, email: invite.email })
+      return withCookiesFrom(signIn, { ok: true, clientId: invite.clientId, email: invite.email })
     }
 
     const signUp = await auth.api.signUpEmail({
@@ -162,7 +168,7 @@ export async function redeemInvite(token: string, password: string, request: Req
         email: invite.email,
         password,
         name: client.name,
-        clientId: invite.client_id,
+        clientId: invite.clientId,
       },
       headers: request.headers,
       asResponse: true,
@@ -171,7 +177,7 @@ export async function redeemInvite(token: string, password: string, request: Req
       await release()
       return jsonError(400, 'Could not create account')
     }
-    return withCookiesFrom(signUp, { ok: true, clientId: invite.client_id, email: invite.email })
+    return withCookiesFrom(signUp, { ok: true, clientId: invite.clientId, email: invite.email })
   } catch (err) {
     await release()
     throw err

@@ -1,5 +1,7 @@
-// Postgres pool shared by Better Auth and the invites table. Program content is never stored here.
+// Postgres pool and Drizzle client shared by Better Auth and the invites table. Program content is never stored here.
+import { drizzle } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
+import * as schema from './schema'
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -7,3 +9,4 @@ if (!url) {
 }
 
 export const pool = new pg.Pool({ connectionString: url })
+export const db = drizzle(pool, { schema })
