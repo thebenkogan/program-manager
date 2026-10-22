@@ -4,7 +4,18 @@
 import { Database } from 'bun:sqlite'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
 import { VIDEO_SCHEMA_SQL } from '../../web/shared/video-schema.ts'
 import { todayPacific } from '../../web/shared/progress.ts'
@@ -221,13 +232,17 @@ export function ingest(input: {
   const existing = db.query('SELECT * FROM videos WHERE sha256 = ?').get(hash) as Record<string, unknown> | null
 
   const id = (existing?.id as string | undefined) ?? videoId(hash)
+  // Re-ingesting the same bytes must reuse the paths already indexed; recomputing
+  // them from today's labels would strand the old file and create a duplicate.
   const dirRel = path.join(input.clientId, input.date)
-  const base = `${input.date}_${slug(input.exercise) || 'lift'}_${
+  const exerciseSlug = slug(input.exercise) === 'unlabelled' ? 'clip' : slug(input.exercise) || 'clip'
+  const base = `${input.date}_${exerciseSlug}_${
     input.weight !== null ? `${input.weight}lb` : 'unlabelled'
   }${input.sets !== null ? `_${input.sets}x${input.reps ?? '?'}` : ''}_${id}`
-  const webRel = path.join(dirRel, `${base}.mp4`)
-  const posterRel = path.join(dirRel, `${base}.jpg`)
-  const masterRel = path.join('_masters', `${id}${path.extname(input.file).toLowerCase()}`)
+  const webRel = (existing?.rel_path as string | undefined) ?? path.join(dirRel, `${base}.mp4`)
+  const posterRel = (existing?.poster_path as string | undefined) ?? path.join(dirRel, `${base}.jpg`)
+  const masterRel =
+    (existing?.master_path as string | undefined) ?? path.join('_masters', `${id}${path.extname(input.file).toLowerCase()}`)
 
   const p = probe(input.file)
   const abs = (rel: string) => path.join(mediaDir(), rel)
@@ -238,7 +253,11 @@ export function ingest(input: {
     copyFileSync(input.file, abs(masterRel))
     chmodSync(abs(masterRel), 0o444)
   }
-  if (!existsSync(abs(webRel))) {
+  // Encode to a .part file and rename on success: an interrupted import must never
+  // leave a truncated file that a later run mistakes for a finished one.
+  const partRel = `${webRel}.part.mp4`
+  if (existsSync(abs(partRel))) unlinkSync(abs(partRel))
+  if (!existsSync(abs(webRel)) || !existing) {
     // Cap at 1920px on the long edge; never upscale. H.264 for universal playback.
     const scale = p.width >= p.height ? `'min(1920,iw)':-2` : `-2:'min(1920,ih)'`
     execFileSync(
@@ -246,13 +265,14 @@ export function ingest(input: {
       [
         '-v', 'error', '-y', '-i', input.file,
         '-vf', `scale=${scale}:flags=lanczos`,
-        '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-pix_fmt', 'yuv420p',
+        '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-pix_fmt', 'yuv420p', '-threads', '4',
         '-c:a', 'aac', '-b:a', '96k',
         '-movflags', '+faststart',
-        abs(webRel),
+        abs(partRel),
       ],
       { stdio: ['ignore', 'ignore', 'inherit'] },
     )
+    renameSync(abs(partRel), abs(webRel))
   }
   if (!existsSync(abs(posterRel))) {
     const at = Math.min(1, Math.max(0, p.durationS / 2))

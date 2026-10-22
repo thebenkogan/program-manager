@@ -10,6 +10,7 @@
     "seed-data": "bun run scripts/seed-data.ts",
     "skip-workout": "bun run scripts/skip.ts",
     "video:add": "bun run scripts/videos/add.ts",
+    "video:list": "bun run scripts/videos/list.ts",
     "video:label": "bun run scripts/videos/label.ts",
     "video:scan": "bun run scripts/videos/scan.ts",
     "video:verify": "bun run scripts/videos/verify.ts",
