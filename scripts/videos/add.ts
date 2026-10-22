@@ -65,6 +65,19 @@ if (weight !== null && !Number.isFinite(weight)) {
   process.exit(2)
 }
 
+const labelFields: ('date' | 'exercise' | 'weight' | 'sets' | 'reps' | 'set' | 'notes')[] = []
+if (typeof args.date === 'string') labelFields.push('date')
+if (typeof args.exercise === 'string') {
+  // An explicit exercise also carries the starring labels derived from the program.
+  labelFields.push('exercise', 'weight', 'sets', 'reps')
+} else {
+  if (typeof args.weight === 'string') labelFields.push('weight')
+  if (typeof args.sets === 'string') labelFields.push('sets')
+  if (typeof args.reps === 'string') labelFields.push('reps')
+}
+if (typeof args.set === 'string') labelFields.push('set')
+if (typeof args.notes === 'string') labelFields.push('notes')
+
 const result: Ingested = ingest({
   file,
   clientId,
@@ -77,7 +90,8 @@ const result: Ingested = ingest({
   setIndex: typeof args.set === 'string' ? Number(args.set) : null,
   notes: typeof args.notes === 'string' ? args.notes : null,
   source: typeof args.source === 'string' ? args.source : 'manual',
-  forceLabels: true,
+  // Re-adding the same bytes with no labels must not clear previously applied ones.
+  labelFields,
 })
 
 console.log(

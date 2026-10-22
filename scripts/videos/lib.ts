@@ -225,7 +225,8 @@ export function ingest(input: {
   setIndex?: number | null
   notes?: string | null
   source: string
-  forceLabels?: boolean
+  /** Only these columns are overwritten when the same file is ingested again. */
+  labelFields?: ('date' | 'exercise' | 'weight' | 'sets' | 'reps' | 'set' | 'notes')[]
 }): Ingested {
   const db = openIndex(true)
   const hash = sha256(input.file)
@@ -285,11 +286,27 @@ export function ingest(input: {
 
   const now = new Date().toISOString()
   if (existing) {
-    // Same bytes: update labels only when explicitly provided.
-    if (input.forceLabels) {
-      db.query(
-        `UPDATE videos SET shot_date=?, shot_at=?, exercise=?, weight=?, sets=?, reps=?, set_index=?, notes=? WHERE id=?`,
-      ).run(input.date, input.shotAt, input.exercise, input.weight, input.sets, input.reps, input.setIndex ?? null, input.notes ?? null, id)
+    // Same bytes: touch ONLY fields the caller explicitly supplied. A bare re-add
+    // (no labels) must never wipe labels applied earlier.
+    const fields = input.labelFields ?? []
+    if (fields.length > 0) {
+      const value = (f: string): string | number | null => {
+        switch (f) {
+          case 'date': return input.date
+          case 'exercise': return input.exercise
+          case 'weight': return input.weight
+          case 'sets': return input.sets
+          case 'reps': return input.reps
+          case 'set': return input.setIndex ?? null
+          case 'notes': return input.notes ?? null
+          default: return null
+        }
+      }
+      const columns = fields.map((f) => (f === 'set' ? 'set_index' : f === 'date' ? 'shot_date' : f))
+      db.query(`UPDATE videos SET ${columns.map((c) => `${c}=?`).join(', ')} WHERE id=?`).run(
+        ...fields.map(value),
+        id,
+      )
     }
   } else {
     db.query(
