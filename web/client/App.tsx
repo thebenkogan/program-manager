@@ -8,6 +8,7 @@ import { useFetch, endpoints, type MeResponse } from './api'
 import { hasSessionHint, setSessionHint } from './session-hint'
 import { ProgramPage } from './ProgramPage'
 import { VideosPage } from './VideosPage'
+import { LabelPage } from './LabelPage'
 import { Link, matchPath, usePathname } from './router'
 import { Card, PageTitle, Muted, Page } from './components'
 
@@ -21,6 +22,7 @@ type Route =
   | { kind: 'program' }
   | { kind: 'progress' }
   | { kind: 'videos' }
+  | { kind: 'label' }
   | { kind: 'notFound' }
 
 function resolve(pathname: string): Route {
@@ -31,6 +33,7 @@ function resolve(pathname: string): Route {
   if (matchPath('/program', pathname)) return { kind: 'program' }
   if (matchPath('/progress', pathname)) return { kind: 'progress' }
   if (matchPath('/videos', pathname)) return { kind: 'videos' }
+  if (matchPath('/label', pathname)) return { kind: 'label' }
   return { kind: 'notFound' }
 }
 
@@ -90,6 +93,12 @@ export function App() {
       return (
         <Protected>
           <VideosPage />
+        </Protected>
+      )
+    case 'label':
+      return (
+        <Protected>
+          <LabelPage />
         </Protected>
       )
     case 'notFound':

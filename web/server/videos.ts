@@ -167,6 +167,87 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+/** Shape accepted by the labelling endpoint. Every field is optional; only sent fields change. */
+export interface LabelPatch {
+  exercise?: string
+  weight?: number | null
+  sets?: number | null
+  reps?: string | null
+  setIndex?: number | null
+  notes?: string | null
+  date?: string
+}
+
+function validatePatch(input: unknown): { patch: LabelPatch } | { error: string } {
+  if (!input || typeof input !== 'object') return { error: 'invalid_body' }
+  const raw = input as Record<string, unknown>
+  const patch: LabelPatch = {}
+  if (raw.exercise !== undefined) {
+    if (typeof raw.exercise !== 'string' || raw.exercise.trim().length === 0 || raw.exercise.length > 80) {
+      return { error: 'invalid_exercise' }
+    }
+    patch.exercise = raw.exercise.trim()
+  }
+  for (const key of ['weight', 'sets', 'setIndex'] as const) {
+    if (raw[key] === undefined) continue
+    if (raw[key] === null) {
+      patch[key] = null
+      continue
+    }
+    const n = Number(raw[key])
+    const max = key === 'weight' ? 2000 : 50
+    if (!Number.isFinite(n) || n < 0 || n > max) return { error: `invalid_${key}` }
+    patch[key] = n
+  }
+  if (raw.reps !== undefined) {
+    if (raw.reps !== null && (typeof raw.reps !== 'string' || raw.reps.length > 20)) return { error: 'invalid_reps' }
+    patch.reps = raw.reps as string | null
+  }
+  if (raw.notes !== undefined) {
+    if (raw.notes !== null && (typeof raw.notes !== 'string' || raw.notes.length > 500)) return { error: 'invalid_notes' }
+    patch.notes = raw.notes as string | null
+  }
+  if (raw.date !== undefined) {
+    if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) return { error: 'invalid_date' }
+    patch.date = raw.date
+  }
+  if (Object.keys(patch).length === 0) return { error: 'empty_patch' }
+  return { patch }
+}
+
+/**
+ * Apply labels to one of the session client's videos. Opens the index read-write:
+ * this is the only web write path, and it can never create or delete rows.
+ */
+export function updateVideoLabels(clientId: string, id: string, patch: LabelPatch): boolean {
+  const dir = mediaDir()
+  let db: Database
+  try {
+    db = new Database(path.join(dir, 'index.sqlite'))
+  } catch {
+    return false
+  }
+  try {
+    const exists = db.query('SELECT 1 FROM videos WHERE client_id = ? AND id = ?').get(clientId, id)
+    if (!exists) return false
+    const columns: string[] = []
+    const values: (string | number | null)[] = []
+    const map: Record<string, string> = { setIndex: 'set_index', date: 'shot_date' }
+    for (const [key, value] of Object.entries(patch)) {
+      columns.push(map[key] ?? key)
+      values.push(value as string | number | null)
+    }
+    db.query(`UPDATE videos SET ${columns.map((c) => `${c} = ?`).join(', ')} WHERE client_id = ? AND id = ?`).run(
+      ...values,
+      clientId,
+      id,
+    )
+    return true
+  } finally {
+    db.close()
+  }
+}
+
 export type VideoResolver = (req: Request) => Promise<ClientSession | null>
 
 /**
@@ -179,8 +260,32 @@ export async function handleVideoRoutes(
 ): Promise<Response | null> {
   const url = new URL(request.url)
   const isList = url.pathname === '/api/me/videos'
+  const label = /^\/api\/videos\/([^/]+)\/label$/.exec(url.pathname)
   const media = /^\/api\/videos\/([^/]+)(\/poster)?$/.exec(url.pathname)
-  if (!isList && !media) return null
+  if (!isList && !label && !media) return null
+
+  if (label) {
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', Allow: 'POST' },
+      })
+    }
+    const me = await resolve(request)
+    if (!me) return json({ error: 'unauthorized' }, 401)
+    const id = decodeURIComponent(label[1])
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return json({ error: 'invalid_body' }, 400)
+    }
+    const parsed = validatePatch(body)
+    if ('error' in parsed) return json({ error: parsed.error }, 400)
+    if (!updateVideoLabels(me.clientId, id, parsed.patch)) return json({ error: 'not_found' }, 404)
+    const row = findVideo(me.clientId, id)
+    return row ? json(toItem(row)) : json({ error: 'not_found' }, 404)
+  }
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response(JSON.stringify({ error: 'method_not_allowed' }), {

@@ -90,6 +90,44 @@ describe('video routes', () => {
     expect((await call(`/api/videos/does-not-exist`))!.status).toBe(404)
   })
 
+  test('labels a clip for its owner only', async () => {
+    const body = JSON.stringify({ exercise: 'Front Squat', weight: 205, sets: 3, reps: '5' })
+    const post = (resolve: VideoResolver = ben) =>
+      handleVideoRoutes(
+        new Request(`http://localhost/api/videos/${ID}/label`, {
+          method: 'POST',
+          body,
+          headers: { 'content-type': 'application/json' },
+        }),
+        resolve,
+      )
+
+    expect((await post(anon))!.status).toBe(401)
+    expect((await post(andi))!.status).toBe(404)
+
+    const res = (await post())!
+    expect(res.status).toBe(200)
+    const updated = (await res.json()) as { exercise: string; weight: number; sets: number; reps: string }
+    expect(updated).toMatchObject({ exercise: 'Front Squat', weight: 205, sets: 3, reps: '5' })
+
+    const list = (await (await call('/api/me/videos'))!.json()) as { videos: { exercise: string; weight: number }[] }
+    expect(list.videos[0]).toMatchObject({ exercise: 'Front Squat', weight: 205 })
+  })
+
+  test('rejects malformed label bodies', async () => {
+    for (const body of ['{}', '{"weight":-5}', '{"exercise":""}', 'not json']) {
+      const res = (await handleVideoRoutes(
+        new Request(`http://localhost/api/videos/${ID}/label`, {
+          method: 'POST',
+          body,
+          headers: { 'content-type': 'application/json' },
+        }),
+        ben,
+      ))!
+      expect(res.status).toBe(400)
+    }
+  })
+
   test('rejects ranges outside the file', async () => {
     const res = (await call(`/api/videos/${ID}`, ben, { range: 'bytes=999-' }))!
     expect(res.status).toBe(416)

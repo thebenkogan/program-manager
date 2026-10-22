@@ -29,6 +29,10 @@ export function VideosPage() {
           <Link to="/progress" className="underline underline-offset-2 hover:text-zinc-200">
             Back to progress
           </Link>
+          <span className="px-1.5 text-zinc-600">·</span>
+          <Link to="/label" className="underline underline-offset-2 hover:text-zinc-200">
+            Label clips
+          </Link>
         </Muted>
       </header>
 
