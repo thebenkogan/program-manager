@@ -9,6 +9,10 @@
     "render:test": "uv run --with Pillow python scripts/test_render_card.py",
     "seed-data": "bun run scripts/seed-data.ts",
     "skip-workout": "bun run scripts/skip.ts",
+    "video:add": "bun run scripts/videos/add.ts",
+    "video:label": "bun run scripts/videos/label.ts",
+    "video:scan": "bun run scripts/videos/scan.ts",
+    "video:verify": "bun run scripts/videos/verify.ts",
     "defer-workout": "bun run scripts/defer.ts",
     "test": "bun test"
   },

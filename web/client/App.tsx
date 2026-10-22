@@ -7,6 +7,7 @@ import { LandingPage } from './LandingPage'
 import { useFetch, endpoints, type MeResponse } from './api'
 import { hasSessionHint, setSessionHint } from './session-hint'
 import { ProgramPage } from './ProgramPage'
+import { VideosPage } from './VideosPage'
 import { Link, matchPath, usePathname } from './router'
 import { Card, PageTitle, Muted, Page } from './components'
 
@@ -19,6 +20,7 @@ type Route =
   | { kind: 'next' }
   | { kind: 'program' }
   | { kind: 'progress' }
+  | { kind: 'videos' }
   | { kind: 'notFound' }
 
 function resolve(pathname: string): Route {
@@ -28,6 +30,7 @@ function resolve(pathname: string): Route {
   if (matchPath('/', pathname)) return { kind: 'next' }
   if (matchPath('/program', pathname)) return { kind: 'program' }
   if (matchPath('/progress', pathname)) return { kind: 'progress' }
+  if (matchPath('/videos', pathname)) return { kind: 'videos' }
   return { kind: 'notFound' }
 }
 
@@ -81,6 +84,12 @@ export function App() {
           <Suspense fallback={<p className="py-10 text-center text-sm text-zinc-500">Loading…</p>}>
             <ProgressPage />
           </Suspense>
+        </Protected>
+      )
+    case 'videos':
+      return (
+        <Protected>
+          <VideosPage />
         </Protected>
       )
     case 'notFound':

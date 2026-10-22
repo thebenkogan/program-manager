@@ -1,5 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { MeResponse, NextWorkoutResponse, ProgramResponse, ProgressResponse } from '../shared/api'
+import type {
+  MeResponse,
+  NextWorkoutResponse,
+  ProgramResponse,
+  ProgressResponse,
+  VideoItem,
+  VideosResponse,
+} from '../shared/api'
 import { navigate } from './router'
 
 export class ApiError extends Error {
@@ -91,6 +98,7 @@ export const endpoints = {
   next: '/api/me/next',
   program: '/api/me/program',
   progress: '/api/me/progress',
+  videos: '/api/me/videos',
 }
 
-export type { MeResponse, NextWorkoutResponse, ProgramResponse, ProgressResponse }
+export type { MeResponse, NextWorkoutResponse, ProgramResponse, ProgressResponse, VideoItem, VideosResponse }

@@ -9,6 +9,7 @@ const tabs = [
   { to: '/', label: 'Next' },
   { to: '/program', label: 'Program' },
   { to: '/progress', label: 'Progress' },
+  { to: '/videos', label: 'Videos' },
 ]
 
 /** Layout for signed-in pages: header, content, bottom tab bar. */
@@ -50,7 +51,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="mx-auto max-w-md space-y-4 px-4 pt-5">{children}</main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur">
-        <ul className="mx-auto grid max-w-md grid-cols-3">
+        <ul className="mx-auto grid max-w-md grid-cols-4">
           {tabs.map((t) => {
             const active = path === t.to
             return (

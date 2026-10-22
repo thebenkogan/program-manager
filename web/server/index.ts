@@ -2,12 +2,13 @@
 import path from 'node:path'
 import { handleAuthRoutes } from './auth-routes.ts'
 import { handleApi } from './api.ts'
+import { handleVideoRoutes } from './videos.ts'
 import { getClientId } from './auth.ts'
 
 const DIST = path.resolve(import.meta.dir, '../dist')
 const PORT = Number(process.env.PORT ?? 3000)
 
-const SPA_PATHS = /^\/(invite\/[^/]+|signin|program|progress)?\/?$/
+const SPA_PATHS = /^\/(invite\/[^/]+|signin|program|progress|videos)?\/?$/
 
 async function serveStatic(pathname: string): Promise<Response | null> {
   if (pathname === '/') return null
@@ -21,7 +22,7 @@ async function serveStatic(pathname: string): Promise<Response | null> {
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
-    "connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "media-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'same-origin',
@@ -50,6 +51,8 @@ async function route(request: Request): Promise<Response> {
     if (auth) return auth
     const api = await handleApi(request, getClientId)
     if (api) return api
+    const videos = await handleVideoRoutes(request, getClientId)
+    if (videos) return videos
     if (url.pathname.startsWith('/api/')) return Response.json({ error: 'not_found' }, { status: 404 })
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405 })
     const asset = await serveStatic(url.pathname)

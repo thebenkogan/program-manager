@@ -53,4 +53,26 @@ export interface ProgressResponse {
   exercises: ExerciseProgress[]
 }
 
+export interface VideoItem {
+  id: string
+  /** Calendar date the clip was shot (Pacific, YYYY-MM-DD). */
+  date: string
+  /** Canonical program exercise name, e.g. "High Bar Back Squat". */
+  exercise: string
+  weight: number | null
+  sets: number | null
+  reps: string | null
+  setIndex: number | null
+  notes?: string
+  durationS: number | null
+  createdAt: string
+  /** Same-origin, session-scoped media URLs. */
+  videoUrl: string
+  posterUrl: string
+}
+
+export interface VideosResponse {
+  videos: VideoItem[]
+}
+
 export type { Exercise, Session }
