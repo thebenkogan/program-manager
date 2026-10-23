@@ -22,24 +22,26 @@ export function VideosPage() {
 
   return (
     <>
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <PageTitle>Videos</PageTitle>
-          <p className="mt-1 text-sm text-zinc-300">Every clip, newest first.</p>
+      <header>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <PageTitle>Videos</PageTitle>
+            <p className="mt-1 text-sm text-zinc-300">Every clip, newest first.</p>
+          </div>
+          <Link
+            to="/upload"
+            className="mt-1 shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-white"
+          >
+            + Upload
+          </Link>
         </div>
-        <Link
-          to="/upload"
-          className="mt-1 shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-white"
-        >
-          + Upload
-        </Link>
-        <Muted className="mt-2">
+        <Muted className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <Link to="/progress" className="underline underline-offset-2 hover:text-zinc-200">
             Back to progress
           </Link>
-          <span className="px-1.5 text-zinc-600">·</span>
+          <span className="text-zinc-600">·</span>
           <Link to="/label" className="underline underline-offset-2 hover:text-zinc-200">
-            Label clips
+            Edit labels
           </Link>
         </Muted>
       </header>
