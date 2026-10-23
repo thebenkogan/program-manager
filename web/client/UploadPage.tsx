@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
 import { apiPost, endpoints, useFetch } from './api'
-import { Card, Loaded, Muted, PageTitle, Spinner, cn } from './components'
+import { Card, Loaded, Muted, PageTitle, cn } from './components'
 import { Link, navigate } from './router'
 import { formatLongDate } from './format'
 import { VideoPlayerModal } from './videos-ui'
@@ -278,7 +278,16 @@ export function UploadPage() {
                 </div>
               )}
 
-              {items.length === 0 && queue.length === 0 && <Spinner />}
+              {items.length === 0 && queue.length === 0 && (
+                <Card>
+                  <Muted>No drafts — everything you uploaded is published.</Muted>
+                  <p className="mt-2 text-sm">
+                    <Link to="/videos" className="font-medium text-zinc-200 underline underline-offset-2">
+                      View your videos
+                    </Link>
+                  </p>
+                </Card>
+              )}
 
               {items.slice(0, limit).map((video) => (
                 <DraftCard
