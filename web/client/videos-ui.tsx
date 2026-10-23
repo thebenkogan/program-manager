@@ -12,8 +12,11 @@ export function formatDuration(seconds: number | null): string {
 export function videoLabel(v: VideoItem): string {
   const parts: string[] = []
   if (v.weight !== null) parts.push(`${v.weight} lb`)
-  if (v.sets !== null && v.reps) parts.push(`${v.sets}×${v.reps}`)
-  else if (v.sets !== null) parts.push(`${v.sets} sets`)
+  if (v.sets !== null && v.reps) {
+    // One clip = one set; showing "1×5" on every video is noise.
+    if (v.sets === 1) parts.push(`${v.reps} ${v.reps === '1' ? 'rep' : 'reps'}`)
+    else parts.push(`${v.sets}×${v.reps}`)
+  } else if (v.sets !== null) parts.push(`${v.sets} sets`)
   else if (v.reps) parts.push(`${v.reps} reps`)
   return parts.join(' · ')
 }

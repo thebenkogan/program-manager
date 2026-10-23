@@ -45,6 +45,14 @@ console.log(`${files.length} video file(s) under ${root}`)
 
 const db = openIndex(true)
 const known = new Set((db.query('SELECT sha256 FROM videos').all() as { sha256: string }[]).map((r) => r.sha256))
+const knownContent = new Set(
+  (db.query('SELECT shot_date, duration_s, width, height FROM videos').all() as {
+    shot_date: string
+    duration_s: number | null
+    width: number | null
+    height: number | null
+  }[]).map((r) => `${r.shot_date}|${(r.duration_s ?? 0).toFixed(1)}|${r.width}x${r.height}`),
+)
 db.close()
 
 const seen = new Set<string>()
@@ -69,6 +77,13 @@ for (const [index, file] of files.entries()) {
     const p = probe(file)
     const shotAt = captureTime(file, p)
     const date = pacificDate(shotAt)
+    const contentKey = `${date}|${p.durationS.toFixed(1)}|${p.width}x${p.height}`
+    if (knownContent.has(contentKey)) {
+      rows.push({ file: rel, status: 'duplicate-content', date })
+      console.log(`[${index + 1}/${files.length}] skip (same date/length/resolution) ${rel}`)
+      continue
+    }
+    knownContent.add(contentKey)
     const result = ingest({
       file,
       clientId,

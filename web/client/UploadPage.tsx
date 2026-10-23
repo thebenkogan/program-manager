@@ -241,7 +241,9 @@ export function UploadPage() {
                                 <p className="truncate text-xs text-zinc-200">
                                   {video.status === 'published' ? 'Published' : 'Draft'} ·{' '}
                                   {video.weight !== null ? `${video.weight} lb` : 'no weight'}
-                                  {video.sets !== null ? ` · ${video.sets}×${video.reps ?? '?'}` : ''}
+                                  {video.sets !== null
+                                    ? ` · ${video.sets === 1 ? `${video.reps ?? '?'} rep` : `${video.sets}×${video.reps ?? '?'}`}`
+                                    : ''}
                                 </p>
                                 <p className="text-[10px] text-zinc-500">{video.id}</p>
                               </div>
