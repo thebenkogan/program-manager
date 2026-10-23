@@ -114,6 +114,19 @@ describe('video routes', () => {
     expect(list.videos[0]).toMatchObject({ exercise: 'Front Squat', weight: 205 })
   })
 
+  test('publishes a draft through the HTTP route (regression: route must reach handler)', async () => {
+    const db = new Database(path.join(dir, 'index.sqlite'))
+    db.query("UPDATE videos SET status = 'draft' WHERE id = ?").run(ID)
+    db.close()
+
+    const res = (await handleVideoRoutes(
+      new Request(`http://localhost/api/videos/${ID}/publish`, { method: 'POST' }),
+      ben,
+    ))!
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { status: string }).status).toBe('published')
+  })
+
   test('rejects malformed label bodies', async () => {
     for (const body of ['{}', '{"weight":-5}', '{"exercise":""}', 'not json']) {
       const res = (await handleVideoRoutes(

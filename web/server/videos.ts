@@ -346,8 +346,9 @@ export async function handleVideoRoutes(
   const url = new URL(request.url)
   const isList = url.pathname === '/api/me/videos'
   const label = /^\/api\/videos\/([^/]+)\/label$/.exec(url.pathname)
+  const publish = /^\/api\/videos\/([^/]+)\/publish$/.exec(url.pathname)
   const media = /^\/api\/videos\/([^/]+)(\/poster)?$/.exec(url.pathname)
-  if (!isList && !label && !media) return null
+  if (!isList && !label && !publish && !media) return null
 
   if (label) {
     if (request.method !== 'POST') {
@@ -374,7 +375,6 @@ export async function handleVideoRoutes(
     return row ? json(toItem(row)) : json({ error: 'not_found' }, 404)
   }
 
-  const publish = /^\/api\/videos\/([^/]+)\/publish$/.exec(url.pathname)
   if (publish) {
     if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
     const me = await resolve(request)
