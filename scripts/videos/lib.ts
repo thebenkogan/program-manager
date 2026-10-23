@@ -225,6 +225,8 @@ export function ingest(input: {
   setIndex?: number | null
   notes?: string | null
   source: string
+  /** Draft clips are visible only to their owner until published. */
+  status?: 'draft' | 'published'
   /** Only these columns are overwritten when the same file is ingested again. */
   labelFields?: ('date' | 'exercise' | 'weight' | 'sets' | 'reps' | 'set' | 'notes')[]
 }): Ingested {
@@ -266,7 +268,7 @@ export function ingest(input: {
       [
         '-v', 'error', '-y', '-i', input.file,
         '-vf', `scale=${scale}:flags=lanczos`,
-        '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-pix_fmt', 'yuv420p', '-threads', '4',
+        '-c:v', 'libx264', '-preset', 'medium', '-crf', '24', '-pix_fmt', 'yuv420p', '-threads', '2',
         '-c:a', 'aac', '-b:a', '96k',
         '-movflags', '+faststart',
         abs(partRel),
@@ -311,12 +313,13 @@ export function ingest(input: {
   } else {
     db.query(
       `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index, notes,
-                           rel_path, master_path, poster_path, duration_s, width, height, bytes, sha256, source, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                           rel_path, master_path, poster_path, duration_s, width, height, bytes, sha256, source,
+                           status, published_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id, input.clientId, input.date, input.shotAt, input.exercise, input.weight, input.sets, input.reps,
       input.setIndex ?? null, input.notes ?? null, webRel, masterRel, posterRel, p.durationS, p.width, p.height,
-      p.bytes, hash, input.source, now,
+      p.bytes, hash, input.source, input.status ?? 'published', (input.status ?? 'published') === 'published' ? now : null, now,
     )
     const manifest = path.join(mediaDir(), 'manifest.jsonl')
     writeFileSync(

@@ -90,6 +90,7 @@ const result: Ingested = ingest({
   setIndex: typeof args.set === 'string' ? Number(args.set) : null,
   notes: typeof args.notes === 'string' ? args.notes : null,
   source: typeof args.source === 'string' ? args.source : 'manual',
+  status: args.draft ? 'draft' : 'published',
   // Re-adding the same bytes with no labels must not clear previously applied ones.
   labelFields,
 })

@@ -100,7 +100,7 @@ async function transcode(id: string): Promise<void> {
   await run([
     'ffmpeg', '-v', 'error', '-y', '-i', master,
     '-vf', `scale=${scale}:flags=lanczos`,
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-pix_fmt', 'yuv420p', '-threads', '2',
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '24', '-pix_fmt', 'yuv420p', '-threads', '2',
     '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart',
     part,
   ])

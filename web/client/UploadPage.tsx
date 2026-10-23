@@ -21,6 +21,7 @@ interface QueueItem {
 export function UploadPage() {
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [busy, setBusy] = useState(false)
+  const [limit, setLimit] = useState(24)
   const [playing, setPlaying] = useState<VideoItem | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const drafts = useFetch<VideosResponse>(`${endpoints.videos}?status=all`)
@@ -197,7 +198,7 @@ export function UploadPage() {
 
               {items.length === 0 && queue.length === 0 && <Spinner />}
 
-              {items.map((video) => (
+              {items.slice(0, limit).map((video) => (
                 <DraftCard
                   key={video.id}
                   video={video}
@@ -207,6 +208,16 @@ export function UploadPage() {
                   onDiscard={() => discard(video)}
                 />
               ))}
+
+              {items.length > limit && (
+                <button
+                  type="button"
+                  onClick={() => setLimit((n) => n + 24)}
+                  className="w-full cursor-pointer rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+                >
+                  Show {Math.min(24, items.length - limit)} more ({items.length - limit} left)
+                </button>
+              )}
 
               {items.length === 0 && queue.length > 0 && busy && <Muted className="text-center">Working…</Muted>}
             </>
@@ -279,7 +290,9 @@ function DraftCard({
           disabled={processing || failed}
           className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md bg-zinc-950 disabled:opacity-50"
         >
-          {!processing && !failed && <img src={video.posterUrl} alt="" className="h-full w-full object-cover" />}
+          {!processing && !failed && (
+            <img src={video.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+          )}
           <span className="absolute inset-0 grid place-items-center text-[10px] text-zinc-400">
             {processing ? 'Encoding…' : failed ? 'Failed' : '▶'}
           </span>
