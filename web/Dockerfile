@@ -11,7 +11,9 @@ RUN bunx vite build
 
 FROM oven/bun:1
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates ffmpeg \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd -g 1001 coachmedia \
+ && useradd -u 1001 -g coachmedia -m -s /bin/bash coachmedia
 WORKDIR /app
 COPY src/shared ./src/shared
 COPY web/package.json web/bun.lock ./web/
@@ -25,6 +27,8 @@ COPY --from=build /app/web/dist ./dist
 # Trust only the mounted client data repo, not every repo on the system.
 RUN git config --system --add safe.directory /data
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
-USER bun
+# Dedicated uid, distinct from the host user: an ordinary `rm` on the host cannot
+# touch /media even though the app can read and write it.
+USER coachmedia
 EXPOSE 3000
 CMD ["bun", "run", "server/index.ts"]
