@@ -35,6 +35,18 @@ export function UploadPage() {
 
   const pending = (drafts.data?.videos ?? []).filter((v) => v.status !== 'published')
 
+  const duplicateGroups = useMemo(() => {
+    const map = new Map<string, VideoItem[]>()
+    for (const v of drafts.data?.videos ?? []) {
+      if (v.exercise === 'Unlabelled') continue
+      const key = `${v.date}|${v.exercise}`
+      const list = map.get(key)
+      if (list) list.push(v)
+      else map.set(key, [v])
+    }
+    return [...map.entries()].filter(([, list]) => list.length > 1)
+  }, [drafts.data])
+
   const uploadOne = useCallback(
     async (file: File, key: string) => {
       const set = (patch: Partial<QueueItem>) =>
@@ -112,6 +124,35 @@ export function UploadPage() {
     drafts.reload()
   }
 
+  /** Keep one clip from a duplicate group: delete the rest, then publish the keeper. */
+  async function keepOnly(video: VideoItem, group: VideoItem[]) {
+    if (
+      !window.confirm(
+        `Keep this clip and permanently delete the other ${group.length - 1}?\n\n${video.exercise} · ${formatLongDate(video.date)}`,
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      for (const other of group) {
+        if (other.id === video.id) continue
+        const res = await fetch(`/api/videos/${other.id}`, { method: 'DELETE', credentials: 'same-origin' })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(body.error ?? `delete failed (${res.status})`)
+        }
+      }
+      if (video.status !== 'published') {
+        await apiPost(`/api/videos/${video.id}/publish`, {})
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not resolve this duplicate')
+    } finally {
+      setBusy(false)
+      drafts.reload()
+    }
+  }
+
   return (
     <>
       <header>
@@ -180,6 +221,47 @@ export function UploadPage() {
           const items = data.videos.filter((v) => v.status !== 'published')
           return (
             <>
+              {duplicateGroups.length > 0 && (
+                <Card>
+                  <h2 className="text-sm font-medium text-zinc-100">Duplicates ({duplicateGroups.length})</h2>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Same exercise on the same day. Pick the clip to keep; the rest are permanently deleted.
+                  </p>
+                  <div className="mt-3 space-y-4">
+                    {duplicateGroups.map(([key, group]) => (
+                      <div key={key}>
+                        <p className="text-xs font-medium text-zinc-300">
+                          {group[0].exercise} · {formatLongDate(group[0].date)}
+                        </p>
+                        <div className="mt-1 space-y-1">
+                          {group.map((video) => (
+                            <div key={video.id} className="flex items-center gap-2 rounded-md bg-zinc-950/40 p-1.5">
+                              <img src={video.posterUrl} alt="" loading="lazy" className="h-10 w-16 rounded object-cover" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs text-zinc-200">
+                                  {video.status === 'published' ? 'Published' : 'Draft'} ·{' '}
+                                  {video.weight !== null ? `${video.weight} lb` : 'no weight'}
+                                  {video.sets !== null ? ` · ${video.sets}×${video.reps ?? '?'}` : ''}
+                                </p>
+                                <p className="text-[10px] text-zinc-500">{video.id}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => keepOnly(video, group)}
+                                disabled={busy}
+                                className="shrink-0 cursor-pointer rounded bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-900 disabled:opacity-40"
+                              >
+                                Keep
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
               {items.length > 0 && (
                 <div className="flex items-center justify-between px-1">
                   <p className="text-sm text-zinc-300">
