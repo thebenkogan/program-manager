@@ -65,7 +65,37 @@ export function VideoRow({ video, onPlay, showExercise }: { video: VideoItem; on
   )
 }
 
-export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose: () => void }) {
+export function VideoPlayerModal({
+  video,
+  onClose,
+  onDeleted,
+}: {
+  video: VideoItem
+  onClose: () => void
+  onDeleted?: () => void
+}) {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function remove() {
+    if (!window.confirm(`Delete this video permanently?\n\n${video.exercise} · ${formatLongDate(video.date)}`)) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch(video.videoUrl, { method: 'DELETE', credentials: 'same-origin' })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `delete failed (${res.status})`)
+      }
+      onDeleted?.()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -90,15 +120,28 @@ export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose
               {formatLongDate(video.date)} · {isUnlabelled(video) ? 'Unlabelled' : videoLabel(video)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close video"
-            className="cursor-pointer rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {onDeleted && (
+              <button
+                type="button"
+                onClick={remove}
+                disabled={deleting}
+                className="cursor-pointer rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-400 hover:border-red-500/50 hover:text-red-300 disabled:opacity-40"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close video"
+              className="cursor-pointer rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              Close
+            </button>
+          </div>
         </div>
+        {error && <p className="mb-2 text-xs text-red-300">{error}</p>}
         <video
           src={video.videoUrl}
           poster={video.posterUrl}

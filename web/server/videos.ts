@@ -4,8 +4,10 @@
 // The index is a SQLite file written only by scripts/videos/*.ts. This module opens
 // it read-only and never exposes filesystem paths to the client or to the request.
 import { Database } from 'bun:sqlite'
+import { unlinkSync } from 'node:fs'
 import path from 'node:path'
 import type { VideoItem, VideosResponse } from '../shared/api'
+import { ensureVideoSchema } from '../shared/video-schema.ts'
 import { getClientId, type ClientSession } from './auth.ts'
 
 export const DEFAULT_MEDIA_DIR = '/srv/coach-media'
@@ -30,6 +32,7 @@ interface VideoRow {
   rel_path: string
   poster_path: string | null
   duration_s: number | null
+  status: VideoItem['status']
   created_at: string
 }
 
@@ -59,22 +62,27 @@ function toItem(row: VideoRow): VideoItem {
     setIndex: row.set_index,
     notes: row.notes ?? undefined,
     durationS: row.duration_s,
+    status: row.status ?? 'published',
     createdAt: row.created_at,
     videoUrl: `/api/videos/${encodeURIComponent(row.id)}`,
     posterUrl: `/api/videos/${encodeURIComponent(row.id)}/poster`,
   }
 }
 
-/** All videos for one client, newest first. Empty when the index does not exist yet. */
-export function listVideos(clientId: string): VideoItem[] {
+/**
+ * Videos for one client, newest first. Published only by default; `all` also
+ * returns the caller's drafts and in-flight uploads (label screen, upload queue).
+ */
+export function listVideos(clientId: string, options: { all?: boolean } = {}): VideoItem[] {
   const db = openDb()
   if (!db) return []
   try {
     const rows = db
       .query(
         `SELECT id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index,
-                notes, rel_path, poster_path, duration_s, created_at
-           FROM videos WHERE client_id = ? ORDER BY shot_date DESC, shot_at DESC, created_at DESC`,
+                notes, rel_path, poster_path, duration_s, status, created_at
+           FROM videos WHERE client_id = ? ${options.all ? '' : "AND status = 'published'"}
+           ORDER BY shot_date DESC, shot_at DESC, created_at DESC`,
       )
       .all(clientId) as VideoRow[]
     return rows.map(toItem)
@@ -90,7 +98,7 @@ function findVideo(clientId: string, id: string): VideoRow | null {
     return (db
       .query(
         `SELECT id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index,
-                notes, rel_path, poster_path, duration_s, created_at
+                notes, rel_path, poster_path, duration_s, status, created_at
            FROM videos WHERE client_id = ? AND id = ?`,
       )
       .get(clientId, id) as VideoRow | null) ?? null
@@ -219,17 +227,37 @@ function validatePatch(input: unknown): { patch: LabelPatch } | { error: string 
  * Apply labels to one of the session client's videos. Opens the index read-write:
  * this is the only web write path, and it can never create or delete rows.
  */
-export function updateVideoLabels(clientId: string, id: string, patch: LabelPatch): boolean {
+export function updateVideoLabels(
+  clientId: string,
+  id: string,
+  patch: LabelPatch,
+): 'ok' | 'not_found' | 'duplicate' {
   const dir = mediaDir()
   let db: Database
   try {
     db = new Database(path.join(dir, 'index.sqlite'))
   } catch {
-    return false
+    return 'not_found'
   }
   try {
-    const exists = db.query('SELECT 1 FROM videos WHERE client_id = ? AND id = ?').get(clientId, id)
-    if (!exists) return false
+    ensureVideoSchema(db)
+    const row = db
+      .query('SELECT id, shot_date, exercise, status FROM videos WHERE client_id = ? AND id = ?')
+      .get(clientId, id) as { id: string; shot_date: string; exercise: string; status: string } | null
+    if (!row) return 'not_found'
+
+    // One published clip per exercise per day, including when labels are edited later.
+    if (row.status === 'published' && (patch.exercise !== undefined || patch.date !== undefined)) {
+      const nextDate = patch.date ?? row.shot_date
+      const nextExercise = patch.exercise ?? row.exercise
+      const conflict = db
+        .query(
+          "SELECT 1 FROM videos WHERE client_id = ? AND shot_date = ? AND exercise = ? AND status = 'published' AND id <> ?",
+        )
+        .get(clientId, nextDate, nextExercise, id)
+      if (conflict) return 'duplicate'
+    }
+
     const columns: string[] = []
     const values: (string | number | null)[] = []
     const map: Record<string, string> = { setIndex: 'set_index', date: 'shot_date' }
@@ -242,7 +270,64 @@ export function updateVideoLabels(clientId: string, id: string, patch: LabelPatc
       clientId,
       id,
     )
-    return true
+    return 'ok'
+  } finally {
+    db.close()
+  }
+}
+
+/** Publish a finished draft. Fails on the one-clip-per-exercise-per-day rule. */
+export function publishVideo(clientId: string, id: string): 'ok' | 'not_found' | 'not_ready' | 'duplicate' {
+  const db = new Database(path.join(mediaDir(), 'index.sqlite'))
+  try {
+    ensureVideoSchema(db)
+    const row = db.query('SELECT status FROM videos WHERE client_id = ? AND id = ?').get(clientId, id) as
+      | { status: string }
+      | null
+    if (!row) return 'not_found'
+    if (row.status !== 'draft') return 'not_ready'
+    try {
+      db.query("UPDATE videos SET status = 'published', published_at = ? WHERE client_id = ? AND id = ?").run(
+        new Date().toISOString(),
+        clientId,
+        id,
+      )
+    } catch (error) {
+      if (String(error).includes('UNIQUE')) return 'duplicate'
+      throw error
+    }
+    return 'ok'
+  } finally {
+    db.close()
+  }
+}
+
+/** Hard delete: row plus every file it owns. Irreversible by design. */
+export function deleteVideo(clientId: string, id: string): 'ok' | 'not_found' | 'busy' {
+  const root = mediaDir()
+  const db = new Database(path.join(root, 'index.sqlite'))
+  try {
+    ensureVideoSchema(db)
+    const row = db
+      .query('SELECT rel_path, poster_path, master_path, status FROM videos WHERE client_id = ? AND id = ?')
+      .get(clientId, id) as
+      | { rel_path: string; poster_path: string | null; master_path: string | null; status: string }
+      | null
+    if (!row) return 'not_found'
+    if (row.status === 'processing') return 'busy'
+    for (const rel of [row.rel_path, row.poster_path, row.master_path]) {
+      if (!rel) continue
+      const abs = resolveMedia(rel)
+      if (abs) {
+        try {
+          unlinkSync(abs)
+        } catch {
+          // already gone
+        }
+      }
+    }
+    db.query('DELETE FROM videos WHERE client_id = ? AND id = ?').run(clientId, id)
+    return 'ok'
   } finally {
     db.close()
   }
@@ -282,9 +367,33 @@ export async function handleVideoRoutes(
     }
     const parsed = validatePatch(body)
     if ('error' in parsed) return json({ error: parsed.error }, 400)
-    if (!updateVideoLabels(me.clientId, id, parsed.patch)) return json({ error: 'not_found' }, 404)
+    const result = updateVideoLabels(me.clientId, id, parsed.patch)
+    if (result === 'not_found') return json({ error: 'not_found' }, 404)
+    if (result === 'duplicate') return json({ error: 'duplicate' }, 409)
     const row = findVideo(me.clientId, id)
     return row ? json(toItem(row)) : json({ error: 'not_found' }, 404)
+  }
+
+  const publish = /^\/api\/videos\/([^/]+)\/publish$/.exec(url.pathname)
+  if (publish) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
+    const me = await resolve(request)
+    if (!me) return json({ error: 'unauthorized' }, 401)
+    const result = publishVideo(me.clientId, decodeURIComponent(publish[1]))
+    if (result === 'not_found') return json({ error: 'not_found' }, 404)
+    if (result === 'not_ready') return json({ error: 'not_ready' }, 409)
+    if (result === 'duplicate') return json({ error: 'duplicate' }, 409)
+    const row = findVideo(me.clientId, decodeURIComponent(publish[1]))
+    return row ? json(toItem(row)) : json({ ok: true })
+  }
+
+  if (media && !media[2] && request.method === 'DELETE') {
+    const me = await resolve(request)
+    if (!me) return json({ error: 'unauthorized' }, 401)
+    const result = deleteVideo(me.clientId, decodeURIComponent(media[1]))
+    if (result === 'not_found') return json({ error: 'not_found' }, 404)
+    if (result === 'busy') return json({ error: 'busy' }, 409)
+    return json({ ok: true })
   }
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -298,7 +407,7 @@ export async function handleVideoRoutes(
   if (!me) return json({ error: 'unauthorized' }, 401)
 
   if (isList) {
-    const body: VideosResponse = { videos: listVideos(me.clientId) }
+    const body: VideosResponse = { videos: listVideos(me.clientId, { all: url.searchParams.get('status') === 'all' }) }
     return json(body)
   }
 

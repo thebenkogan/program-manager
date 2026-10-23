@@ -10,7 +10,7 @@ COPY web/ ./
 RUN bunx vite build
 
 FROM oven/bun:1
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY src/shared ./src/shared

@@ -22,9 +22,17 @@ export function VideosPage() {
 
   return (
     <>
-      <header>
-        <PageTitle>Videos</PageTitle>
-        <p className="mt-1 text-sm text-zinc-300">Every clip, newest first.</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <PageTitle>Videos</PageTitle>
+          <p className="mt-1 text-sm text-zinc-300">Every clip, newest first.</p>
+        </div>
+        <Link
+          to="/upload"
+          className="mt-1 shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-white"
+        >
+          + Upload
+        </Link>
         <Muted className="mt-2">
           <Link to="/progress" className="underline underline-offset-2 hover:text-zinc-200">
             Back to progress
@@ -40,7 +48,9 @@ export function VideosPage() {
         {(data) => <VideoLibrary videos={data.videos} exercise={exercise} setExercise={setExercise} onPlay={setPlaying} />}
       </Loaded>
 
-      {playing && <VideoPlayerModal video={playing} onClose={() => setPlaying(null)} />}
+      {playing && (
+        <VideoPlayerModal video={playing} onClose={() => setPlaying(null)} onDeleted={() => state.reload()} />
+      )}
     </>
   )
 }

@@ -65,6 +65,8 @@ export interface VideoItem {
   setIndex: number | null
   notes?: string
   durationS: number | null
+  /** processing = still transcoding, draft = ready but unpublished. */
+  status: 'processing' | 'draft' | 'published' | 'failed'
   createdAt: string
   /** Same-origin, session-scoped media URLs. */
   videoUrl: string

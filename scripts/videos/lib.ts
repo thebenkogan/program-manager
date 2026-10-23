@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import path from 'node:path'
-import { VIDEO_SCHEMA_SQL } from '../../web/shared/video-schema.ts'
+import { ensureVideoSchema } from '../../web/shared/video-schema.ts'
 import { todayPacific } from '../../web/shared/progress.ts'
 import type { Exercise, ProgramFile } from '../../src/shared/types'
 
@@ -35,7 +35,7 @@ export function openIndex(write: boolean): Database {
   const db = new Database(path.join(dir, 'index.sqlite'), write ? undefined : { readonly: true })
   if (write) {
     db.exec('PRAGMA journal_mode = WAL;')
-    db.exec(VIDEO_SCHEMA_SQL)
+    ensureVideoSchema(db)
   }
   return db
 }
