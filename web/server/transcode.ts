@@ -51,13 +51,24 @@ function mark(id: string, status: string): void {
   }
 }
 
-async function run(args: string[]): Promise<void> {
+async function run(args: string[], timeoutMs = 15 * 60_000): Promise<void> {
   const proc = Bun.spawn(args, { stdout: 'ignore', stderr: 'pipe' })
-  const code = await proc.exited
-  if (code !== 0) {
-    const err = await new Response(proc.stderr).text()
-    throw new Error(`ffmpeg exited ${code}: ${err.slice(0, 400)}`)
+  // Drain stderr while the process runs: ffmpeg blocks on a full pipe buffer if
+  // nobody reads it, which looks exactly like a hung transcode.
+  const stderr = new Response(proc.stderr).text()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), timeoutMs)
+  })
+  const result = await Promise.race([proc.exited, timeout])
+  clearTimeout(timer)
+  if (result === 'timeout') {
+    proc.kill()
+    await proc.exited
+    throw new Error(`ffmpeg timed out after ${Math.round(timeoutMs / 1000)}s`)
   }
+  const err = await stderr
+  if (result !== 0) throw new Error(`ffmpeg exited ${result}: ${err.slice(0, 400)}`)
 }
 
 async function transcode(id: string): Promise<void> {

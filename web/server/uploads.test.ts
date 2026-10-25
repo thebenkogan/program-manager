@@ -52,11 +52,17 @@ async function uploadAll(): Promise<string> {
   const { uploadId } = (await created.json()) as { uploadId: string }
 
   const step = Math.ceil(bytes.length / 3)
-  for (let offset = 0; offset < bytes.length; offset += step) {
-    const chunk = new Uint8Array(bytes.subarray(offset, Math.min(offset + step, bytes.length)))
-    const res = (await req(`/api/uploads/${uploadId}/chunk?offset=${offset}`, { method: 'PUT', body: chunk }))!
-    expect(res.status).toBe(200)
-  }
+  const offsets: number[] = []
+  for (let offset = 0; offset < bytes.length; offset += step) offsets.push(offset)
+  // Out of order and concurrent on purpose: the server writes at each offset and
+  // merges received ranges, so neither order nor overlap matters.
+  const responses = await Promise.all(
+    offsets.reverse().map((offset) => {
+      const chunk = new Uint8Array(bytes.subarray(offset, Math.min(offset + step, bytes.length)))
+      return req(`/api/uploads/${uploadId}/chunk?offset=${offset}`, { method: 'PUT', body: chunk })
+    }),
+  )
+  for (const res of responses) expect(res!.status).toBe(200)
 
   const done = (await req(`/api/uploads/${uploadId}/complete`, { method: 'POST' }))!
   expect(done.status).toBe(201)
@@ -77,10 +83,39 @@ async function waitForDraft(id: string): Promise<void> {
 }
 
 describe('upload flow', () => {
-  test('requires a session and rejects bad offsets', async () => {
+  test('requires a session and rejects invalid offsets', async () => {
     expect((await req('/api/uploads', { method: 'POST', body: '{}' }, anon))!.status).toBe(401)
     const bad = (await req('/api/uploads', { method: 'POST', body: JSON.stringify({ filename: 'x.exe', size: 10 }) }))!
     expect(bad.status).toBe(415)
+  })
+
+  test('rejects out-of-range offsets and cannot complete a partial file', async () => {
+    const created = (await req('/api/uploads', {
+      method: 'POST',
+      body: JSON.stringify({ filename: 'clip.mp4', size: bytes.length }),
+      headers: { 'content-type': 'application/json' },
+    }))!
+    const { uploadId } = (await created.json()) as { uploadId: string }
+
+    const beyond = (await req(`/api/uploads/${uploadId}/chunk?offset=${bytes.length + 1}`, {
+      method: 'PUT',
+      body: new Uint8Array([1, 2, 3]),
+    }))!
+    expect(beyond.status).toBe(409)
+    const negative = (await req(`/api/uploads/${uploadId}/chunk?offset=-8`, {
+      method: 'PUT',
+      body: new Uint8Array([1, 2, 3]),
+    }))!
+    expect(negative.status).toBe(409)
+
+    // Half the file: a preallocated staging file must not pass as complete.
+    const half = new Uint8Array(bytes.subarray(0, Math.floor(bytes.length / 2)))
+    expect((await req(`/api/uploads/${uploadId}/chunk?offset=0`, { method: 'PUT', body: half }))!.status).toBe(200)
+    const early = (await req(`/api/uploads/${uploadId}/complete`, { method: 'POST' }))!
+    expect(early.status).toBe(409)
+    const body = (await early.json()) as { error: string; bytes: number }
+    expect(body.error).toBe('incomplete')
+    expect(body.bytes).toBe(half.length)
   })
 
   test('chunks, completes, transcodes, publishes, then deletes', async () => {

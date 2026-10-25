@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS uploads (
   bytes       INTEGER NOT NULL DEFAULT 0,
   status      TEXT NOT NULL DEFAULT 'receiving',
   video_id    TEXT,
+  received    TEXT NOT NULL DEFAULT '[]',
   created_at  TEXT NOT NULL,
   expires_at  TEXT NOT NULL
 );
@@ -59,6 +60,11 @@ export function ensureVideoSchema(db: SchemaDb) {
   const names = new Set(columns.map((c) => c.name))
   if (!names.has('status')) db.exec("ALTER TABLE videos ADD COLUMN status TEXT NOT NULL DEFAULT 'published'")
   if (!names.has('published_at')) db.exec('ALTER TABLE videos ADD COLUMN published_at TEXT')
+  // Parallel uploads land out of order, so the upload row tracks received byte ranges.
+  const uploadColumns = db.query('PRAGMA table_info(uploads)').all() as { name: string }[]
+  if (!uploadColumns.some((c) => c.name === 'received')) {
+    db.exec("ALTER TABLE uploads ADD COLUMN received TEXT NOT NULL DEFAULT '[]'")
+  }
   db.exec("UPDATE videos SET status = 'published' WHERE status IS NULL OR status = ''")
   // The partial index depends on `status`, so it must be created only after the
   // ALTER above — never inside VIDEO_SCHEMA_SQL, which runs first.

@@ -4,7 +4,8 @@
 import { Database } from 'bun:sqlite'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, createReadStream, existsSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, renameSync, truncateSync, unlinkSync, writeFileSync } from 'node:fs'
+import { open } from 'node:fs/promises'
 import path from 'node:path'
 import { enqueueVideo } from './transcode.ts'
 import { getClientId, type ClientSession } from './auth.ts'
@@ -29,8 +30,38 @@ interface UploadRow {
   bytes: number
   status: string
   video_id: string | null
+  received: string
   created_at: string
   expires_at: string
+}
+
+/** Half-open [start, end) byte ranges already written to the staging file. */
+type Range = [number, number]
+
+function parseRanges(raw: string | null): Range[] {
+  try {
+    const parsed = JSON.parse(raw ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (r): r is Range => Array.isArray(r) && r.length === 2 && Number.isFinite(r[0]) && Number.isFinite(r[1]) && r[1] > r[0],
+    )
+  } catch {
+    return []
+  }
+}
+
+function mergeRanges(ranges: Range[]): Range[] {
+  const out: Range[] = []
+  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    const last = out[out.length - 1]
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end)
+    else out.push([start, end])
+  }
+  return out
+}
+
+function coveredBytes(ranges: Range[]): number {
+  return ranges.reduce((sum, [start, end]) => sum + (end - start), 0)
 }
 
 function openDb(): Database {
@@ -144,7 +175,11 @@ export async function handleUploadRoutes(
     const id = crypto.randomUUID().replaceAll('-', '')
     const now = new Date()
     mkdirSync(path.join(mediaDir(), '_incoming'), { recursive: true })
-    writeFileSync(stagingPath(id, ext), Buffer.alloc(0))
+    // Preallocate to the declared size so concurrent chunks can write at any offset.
+    // Sparse on disk; the bytes only materialise as chunks land.
+    const staged = stagingPath(id, ext)
+    writeFileSync(staged, Buffer.alloc(0))
+    truncateSync(staged, size)
     db.query(
       'INSERT INTO uploads (id, client_id, filename, ext, size, bytes, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)',
     ).run(id, me.clientId, filename, ext, size, 'receiving', now.toISOString(), new Date(now.getTime() + UPLOAD_TTL_MS).toISOString())
@@ -169,9 +204,11 @@ export async function handleUploadRoutes(
       return json({ error: 'not_receiving' }, 409)
     }
     const offset = Number(url.searchParams.get('offset'))
-    if (!Number.isFinite(offset) || offset !== row.bytes) {
+    // Chunks may arrive in any order: each is written at its own offset and its
+    // range recorded. Retries are idempotent because ranges are merged.
+    if (!Number.isInteger(offset) || offset < 0 || offset > row.size) {
       db.close()
-      return json({ error: 'bad_offset', bytes: row.bytes }, 409)
+      return json({ error: 'bad_offset', received: row.bytes, size: row.size }, 409)
     }
     const length = Number(request.headers.get('content-length') ?? 0)
     if (length > MAX_CHUNK) {
@@ -179,15 +216,35 @@ export async function handleUploadRoutes(
       return json({ error: 'chunk_too_large' }, 413)
     }
     const buf = Buffer.from(await request.arrayBuffer())
-    if (buf.length === 0 || row.bytes + buf.length > row.size) {
+    if (buf.length === 0 || offset + buf.length > row.size) {
       db.close()
       return json({ error: 'bad_chunk' }, 400)
     }
-    appendFileSync(stagingPath(row.id, row.ext), buf)
-    db.query('UPDATE uploads SET bytes = bytes + ? WHERE id = ?').run(buf.length, id)
-    const updated = db.query('SELECT bytes FROM uploads WHERE id = ?').get(id) as { bytes: number }
-    db.close()
-    return json({ received: updated.bytes, size: row.size })
+    const file = stagingPath(row.id, row.ext)
+    if (!existsSync(file)) {
+      db.close()
+      return json({ error: 'missing_staging' }, 409)
+    }
+    const handle = await open(file, 'r+')
+    try {
+      await handle.write(buf, 0, buf.length, offset)
+    } finally {
+      await handle.close()
+    }
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      const current = db.query('SELECT received FROM uploads WHERE id = ?').get(id) as { received: string }
+      const ranges = mergeRanges([...parseRanges(current.received), [offset, offset + buf.length]])
+      const received = coveredBytes(ranges)
+      db.query('UPDATE uploads SET received = ?, bytes = ? WHERE id = ?').run(JSON.stringify(ranges), received, id)
+      db.exec('COMMIT')
+      return json({ received, size: row.size, offset })
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    } finally {
+      db.close()
+    }
   }
 
   if (action === '/complete' && request.method === 'POST') {
@@ -215,8 +272,12 @@ export async function handleUploadRoutes(
 async function complete(row: UploadRow, clientId: string): Promise<Response> {
   const staged = stagingPath(row.id, row.ext)
   if (!existsSync(staged)) return json({ error: 'missing_staging' }, 409)
-  const size = statSync(staged).size
-  if (size !== row.size) return json({ error: 'incomplete', bytes: size }, 409)
+  // The file is preallocated to the declared size, so size alone proves nothing:
+  // require one contiguous range covering every byte.
+  const ranges = mergeRanges(parseRanges(row.received))
+  const covered = coveredBytes(ranges)
+  const complete = ranges.length === 1 && ranges[0][0] === 0 && ranges[0][1] === row.size
+  if (!complete) return json({ error: 'incomplete', bytes: covered, size: row.size }, 409)
 
   const hash = await hashFile(staged)
   const db = openDb()
@@ -252,7 +313,7 @@ async function complete(row: UploadRow, clientId: string): Promise<Response> {
     `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index, notes,
                          rel_path, master_path, poster_path, duration_s, width, height, bytes, sha256, source, status, created_at)
      VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', 'processing', ?)`,
-  ).run(id, clientId, date, shotAt, exercise, rel, masterRel, poster, probeResult.durationS, probeResult.width, probeResult.height, size, hash, new Date().toISOString())
+  ).run(id, clientId, date, shotAt, exercise, rel, masterRel, poster, probeResult.durationS, probeResult.width, probeResult.height, row.size, hash, new Date().toISOString())
   db.query("UPDATE uploads SET status = 'done', video_id = ? WHERE id = ?").run(id, row.id)
   db.close()
 

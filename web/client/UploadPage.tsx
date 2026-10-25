@@ -7,6 +7,9 @@ import { formatLongDate } from './format'
 import { VideoPlayerModal } from './videos-ui'
 
 const CHUNK = 8 * 1024 * 1024
+/** Chunks in flight at once. 4 x 8 MB keeps ~32 MB moving without starving other tabs. */
+const CONCURRENCY = 4
+const MAX_RETRIES = 3
 
 interface QueueItem {
   key: string
@@ -67,21 +70,50 @@ export function UploadPage() {
           filename: file.name,
           size: file.size,
         })
-        let offset = 0
-        while (offset < file.size) {
-          const slice = file.slice(offset, Math.min(offset + CHUNK, file.size))
-          const res = await fetch(`/api/uploads/${created.uploadId}/chunk?offset=${offset}`, {
-            method: 'PUT',
-            body: slice,
-            credentials: 'same-origin',
-          })
-          if (!res.ok) {
+
+        // Chunks run in parallel. The server writes each at its own offset and
+        // tracks received ranges, so order does not matter and a retried chunk is
+        // harmless. Progress counts bytes the server acknowledged.
+        const offsets: number[] = []
+        for (let offset = 0; offset < file.size; offset += CHUNK) offsets.push(offset)
+        let acknowledged = 0
+        let nextOffset = 0
+        const send = async (offset: number) => {
+          const end = Math.min(offset + CHUNK, file.size)
+          for (let attempt = 0; ; attempt++) {
+            let res: Response
+            try {
+              res = await fetch(`/api/uploads/${created.uploadId}/chunk?offset=${offset}`, {
+                method: 'PUT',
+                body: file.slice(offset, end),
+                credentials: 'same-origin',
+              })
+            } catch (error) {
+              // Network blip: back off and retry the same chunk (writes are idempotent).
+              if (attempt >= MAX_RETRIES) throw error
+              await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
+              continue
+            }
+            if (res.ok) break
             const body = (await res.json().catch(() => ({}))) as { error?: string }
+            // 5xx is worth retrying; 4xx means the request itself is wrong.
+            if (res.status >= 500 && attempt < MAX_RETRIES) {
+              await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
+              continue
+            }
             throw new Error(body.error ?? `chunk ${res.status}`)
           }
-          offset += slice.size
-          set({ progress: Math.round((offset / file.size) * 100) })
+          acknowledged += end - offset
+          set({ progress: Math.round((acknowledged / file.size) * 100) })
         }
+        const worker = async () => {
+          while (nextOffset < offsets.length) {
+            const offset = offsets[nextOffset++]
+            await send(offset)
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, worker))
+
         const done = await fetch(`/api/uploads/${created.uploadId}/complete`, {
           method: 'POST',
           credentials: 'same-origin',
