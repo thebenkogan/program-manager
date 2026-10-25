@@ -7,8 +7,8 @@ import { formatLongDate } from './format'
 import { VideoPlayerModal } from './videos-ui'
 
 const CHUNK = 8 * 1024 * 1024
-/** Chunks in flight at once. 4 x 8 MB keeps ~32 MB moving without starving other tabs. */
-const CONCURRENCY = 4
+/** Chunks in flight at once. 8 x 8 MB = 64 MB of the file in flight. */
+const CONCURRENCY = 8
 const MAX_RETRIES = 3
 
 interface QueueItem {
