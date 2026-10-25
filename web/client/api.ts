@@ -49,6 +49,8 @@ export interface FetchState<T> {
   error: ApiError | null
   loading: boolean
   reload: () => void
+  /** Re-fetch without flipping `loading`, so polling never flashes a spinner. */
+  refresh: () => void
 }
 
 interface FetchOptions {
@@ -90,7 +92,24 @@ export function useFetch<T>(path: string, opts: FetchOptions = {}): FetchState<T
   }, [path, auth, tick])
 
   const reload = useCallback(() => setTick((t) => t + 1), [])
-  return { data, error, loading, reload }
+
+  const refresh = useCallback(() => {
+    apiGet<T>(path)
+      .then((d) => {
+        setData(d)
+        setError(null)
+      })
+      .catch((e: unknown) => {
+        const err = e instanceof ApiError ? e : new ApiError(0, 'Network error. Check your connection.')
+        if (err.status === 401 && auth) {
+          navigate('/signin', { replace: true })
+          return
+        }
+        // Keep the last good data; polling errors are not worth a full-page error.
+      })
+  }, [path, auth])
+
+  return { data, error, loading, reload, refresh }
 }
 
 export const endpoints = {

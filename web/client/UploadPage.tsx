@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
 import { apiPost, endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
@@ -34,6 +34,17 @@ export function UploadPage() {
   }, [program.data])
 
   const pending = (drafts.data?.videos ?? []).filter((v) => v.status !== 'published')
+  const encoding = pending.some((v) => v.status === 'processing')
+
+  // Transcodes finish on the server in under a couple of minutes. Poll while any
+  // clip is still encoding so the card flips to a publishable draft on its own
+  // instead of waiting for a manual refresh.
+  const refreshDrafts = drafts.refresh
+  useEffect(() => {
+    if (!encoding) return
+    const timer = setInterval(refreshDrafts, 4000)
+    return () => clearInterval(timer)
+  }, [encoding, refreshDrafts])
 
   const duplicateGroups = useMemo(() => {
     const map = new Map<string, VideoItem[]>()
