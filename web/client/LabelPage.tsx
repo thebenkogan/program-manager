@@ -91,7 +91,6 @@ function LabelCard({
 }) {
   const [exercise, setExercise] = useState(video.exercise === 'Unlabelled' ? '' : video.exercise)
   const [weight, setWeight] = useState(video.weight === null ? '' : String(video.weight))
-  const [sets, setSets] = useState(video.sets === null ? '' : String(video.sets))
   const [reps, setReps] = useState(video.reps ?? '')
   const [date, setDate] = useState(video.date)
   const [saving, setSaving] = useState(false)
@@ -107,7 +106,8 @@ function LabelCard({
       await apiPost(`/api/videos/${encodeURIComponent(video.id)}/label`, {
         exercise: exercise.trim(),
         weight: weight.trim() === '' ? null : Number(weight),
-        sets: sets.trim() === '' ? null : Number(sets),
+        // One clip is one set, always.
+        sets: 1,
         reps: reps.trim() === '' ? null : reps.trim(),
         date,
       })
@@ -185,20 +185,6 @@ function LabelCard({
               setSaved(false)
             }}
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 focus:border-zinc-400 focus:outline-none"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-zinc-500">Sets</span>
-          <input
-            inputMode="numeric"
-            value={sets}
-            onChange={(e) => {
-              setSets(e.target.value)
-              setSaved(false)
-            }}
-            placeholder="—"
-            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm tabular-nums text-zinc-100 focus:border-zinc-400 focus:outline-none"
           />
         </label>
 

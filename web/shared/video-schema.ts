@@ -68,7 +68,17 @@ export function ensureVideoSchema(db: SchemaDb) {
   db.exec("UPDATE videos SET status = 'published' WHERE status IS NULL OR status = ''")
   // The partial index depends on `status`, so it must be created only after the
   // ALTER above — never inside VIDEO_SCHEMA_SQL, which runs first.
-  db.exec(
-    "CREATE UNIQUE INDEX IF NOT EXISTS videos_one_per_day ON videos (client_id, shot_date, exercise) WHERE status = 'published'",
-  )
+  //
+  // `Unlabelled` is a placeholder, not an exercise: a day's clips publish before
+  // anyone names them, so several may share it. The one-per-exercise-per-day rule
+  // applies once a clip has a real label (enforced on save in updateVideoLabels).
+  const index = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'videos_one_per_day'")
+    .all() as { sql: string | null }[]
+  if (index.length === 0 || !index[0].sql?.includes('Unlabelled')) {
+    db.exec('DROP INDEX IF EXISTS videos_one_per_day')
+    db.exec(
+      "CREATE UNIQUE INDEX videos_one_per_day ON videos (client_id, shot_date, exercise) WHERE status = 'published' AND exercise <> 'Unlabelled'",
+    )
+  }
 }

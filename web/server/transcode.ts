@@ -128,6 +128,19 @@ async function transcode(id: string): Promise<void> {
     return
   }
   const bytes = statSync(web).size
-  check.query("UPDATE videos SET status = 'draft', bytes = ? WHERE id = ? AND status = 'processing'").run(bytes, id)
+  // Publishing is independent of labelling: a finished clip goes live as
+  // `Unlabelled` and gets its exercise filled in later. Only a real collision
+  // (another published clip for the same exercise and day) waits as a draft for
+  // the duplicate resolver on /upload.
+  try {
+    check
+      .query(
+        "UPDATE videos SET status = 'published', published_at = ?, bytes = ? WHERE id = ? AND status = 'processing'",
+      )
+      .run(new Date().toISOString(), bytes, id)
+  } catch (error) {
+    if (!String(error).includes('UNIQUE')) throw error
+    check.query("UPDATE videos SET status = 'draft', bytes = ? WHERE id = ? AND status = 'processing'").run(bytes, id)
+  }
   check.close()
 }

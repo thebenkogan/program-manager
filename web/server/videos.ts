@@ -265,11 +265,17 @@ export function updateVideoLabels(
       columns.push(map[key] ?? key)
       values.push(value as string | number | null)
     }
-    db.query(`UPDATE videos SET ${columns.map((c) => `${c} = ?`).join(', ')} WHERE client_id = ? AND id = ?`).run(
-      ...values,
-      clientId,
-      id,
-    )
+    try {
+      db.query(`UPDATE videos SET ${columns.map((c) => `${c} = ?`).join(', ')} WHERE client_id = ? AND id = ?`).run(
+        ...values,
+        clientId,
+        id,
+      )
+    } catch (error) {
+      // The unique index is the final word on one published clip per exercise/day.
+      if (String(error).includes('UNIQUE')) return 'duplicate'
+      throw error
+    }
     return 'ok'
   } finally {
     db.close()

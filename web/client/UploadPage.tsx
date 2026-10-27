@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
 import { apiPost, endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
-import { Link, navigate } from './router'
+import { Link } from './router'
 import { formatLongDate } from './format'
 import { VideoPlayerModal } from './videos-ui'
 
@@ -20,7 +20,7 @@ interface QueueItem {
   videoId?: string
 }
 
-/** Upload + label + publish. Chunks keep every request under Cloudflare's body cap. */
+/** Upload + label. Clips publish on their own as soon as encoding finishes. */
 export function UploadPage() {
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [busy, setBusy] = useState(false)
@@ -40,8 +40,8 @@ export function UploadPage() {
   const encoding = pending.some((v) => v.status === 'processing')
 
   // Transcodes finish on the server in under a couple of minutes. Poll while any
-  // clip is still encoding so the card flips to a publishable draft on its own
-  // instead of waiting for a manual refresh.
+  // clip is still encoding so the card disappears (published) on its own instead
+  // of waiting for a manual refresh.
   const refreshDrafts = drafts.refresh
   useEffect(() => {
     if (!encoding) return
@@ -145,22 +145,6 @@ export function UploadPage() {
     drafts.reload()
   }
 
-  async function publishAll() {
-    setBusy(true)
-    const errors: string[] = []
-    for (const video of pending.filter((v) => v.status === 'draft')) {
-      try {
-        await apiPost(`/api/videos/${video.id}/publish`, {})
-      } catch (error) {
-        errors.push(`${video.exercise} (${formatLongDate(video.date)}): ${(error as Error).message}`)
-      }
-    }
-    setBusy(false)
-    drafts.reload()
-    if (errors.length === 0) navigate('/videos')
-    else window.alert(`Some clips could not be published:\n\n${errors.join('\n')}`)
-  }
-
   async function discard(video: VideoItem) {
     if (!window.confirm(`Delete this draft permanently?\n\n${video.exercise} · ${formatLongDate(video.date)}`)) return
     await fetch(`/api/videos/${video.id}`, { method: 'DELETE', credentials: 'same-origin' })
@@ -200,7 +184,7 @@ export function UploadPage() {
     <>
       <header>
         <PageTitle>Upload</PageTitle>
-        <Muted className="mt-1">Pick clips, label them, then publish.</Muted>
+        <Muted className="mt-1">Pick clips and label them. Each one publishes as soon as it finishes encoding.</Muted>
       </header>
 
       <input
@@ -308,19 +292,9 @@ export function UploadPage() {
               )}
 
               {items.length > 0 && (
-                <div className="flex items-center justify-between px-1">
-                  <p className="text-sm text-zinc-300">
-                    {items.length} draft{items.length === 1 ? '' : 's'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={publishAll}
-                    disabled={busy || !items.some((v) => v.status === 'draft')}
-                    className="cursor-pointer rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-900 hover:bg-white disabled:opacity-40"
-                  >
-                    Publish all
-                  </button>
-                </div>
+                <p className="px-1 text-sm text-zinc-300">
+                  {items.length} still encoding or waiting on a duplicate
+                </p>
               )}
 
               {items.length === 0 && queue.length === 0 && (
@@ -387,7 +361,6 @@ function DraftCard({
 }) {
   const [exercise, setExercise] = useState(video.exercise === 'Unlabelled' ? '' : video.exercise)
   const [weight, setWeight] = useState(video.weight === null ? '' : String(video.weight))
-  const [sets, setSets] = useState(video.sets === null ? '' : String(video.sets))
   const [reps, setReps] = useState(video.reps ?? '')
   const [date, setDate] = useState(video.date)
   const [saving, setSaving] = useState(false)
@@ -404,7 +377,8 @@ function DraftCard({
       await apiPost(`/api/videos/${video.id}/label`, {
         exercise: exercise.trim(),
         weight: weight.trim() === '' ? null : Number(weight),
-        sets: sets.trim() === '' ? null : Number(sets),
+        // One clip is one set, always.
+        sets: 1,
         reps: reps.trim() === '' ? null : reps.trim(),
         date,
       })
@@ -493,19 +467,6 @@ function DraftCard({
               setSaved(false)
             }}
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 focus:border-zinc-400 focus:outline-none"
-          />
-        </label>
-        <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-zinc-500">Sets</span>
-          <input
-            inputMode="numeric"
-            value={sets}
-            onChange={(e) => {
-              setSets(e.target.value)
-              setSaved(false)
-            }}
-            placeholder="—"
-            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm tabular-nums text-zinc-100 focus:border-zinc-400 focus:outline-none"
           />
         </label>
         <label className="block">

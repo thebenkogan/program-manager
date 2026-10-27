@@ -312,7 +312,7 @@ async function complete(row: UploadRow, clientId: string): Promise<Response> {
   db.query(
     `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index, notes,
                          rel_path, master_path, poster_path, duration_s, width, height, bytes, sha256, source, status, created_at)
-     VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', 'processing', ?)`,
+     VALUES (?, ?, ?, ?, ?, NULL, 1, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', 'processing', ?)`,
   ).run(id, clientId, date, shotAt, exercise, rel, masterRel, poster, probeResult.durationS, probeResult.width, probeResult.height, row.size, hash, new Date().toISOString())
   db.query("UPDATE uploads SET status = 'done', video_id = ? WHERE id = ?").run(id, row.id)
   db.close()

@@ -1,5 +1,5 @@
 // End-to-end upload flow against a temp media dir: create -> chunks -> complete
-// -> transcode -> publish -> duplicate guard -> delete. ffmpeg is required.
+// -> transcode -> auto-publish -> duplicate guard -> delete. ffmpeg is required.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { UploadResolver } from './uploads.ts'
 import { Database } from 'bun:sqlite'
@@ -24,14 +24,21 @@ const ben = async () => ({ clientId: 'ben', clientName: 'Ben', email: 'ben@examp
 const anon = async (): Promise<{ clientId: string; clientName: string; email: string } | null> => null
 
 const SOURCE = path.join(dir, 'source.mp4')
+const SOURCE2 = path.join(dir, 'source2.mp4')
 let bytes: Buffer
+let bytes2: Buffer
 
 beforeAll(async () => {
   execFileSync('ffmpeg', [
     '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=24', '-t', '1',
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', SOURCE,
   ])
+  execFileSync('ffmpeg', [
+    '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=24', '-t', '1.4',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', SOURCE2,
+  ])
   bytes = readFileSync(SOURCE)
+  bytes2 = readFileSync(SOURCE2)
   ;({ handleUploadRoutes } = await import('./uploads.ts'))
   ;({ listVideos, publishVideo, deleteVideo } = await import('./videos.ts'))
 })
@@ -42,23 +49,23 @@ function req(pathname: string, init: RequestInit = {}, resolve: UploadResolver =
   return handleUploadRoutes(new Request(`http://localhost${pathname}`, init), resolve)
 }
 
-async function uploadAll(): Promise<string> {
+async function uploadAll(data: Buffer = bytes): Promise<string> {
   const created = (await req('/api/uploads', {
     method: 'POST',
-    body: JSON.stringify({ filename: 'clip.mp4', size: bytes.length }),
+    body: JSON.stringify({ filename: 'clip.mp4', size: data.length }),
     headers: { 'content-type': 'application/json' },
   }))!
   expect(created.status).toBe(201)
   const { uploadId } = (await created.json()) as { uploadId: string }
 
-  const step = Math.ceil(bytes.length / 3)
+  const step = Math.ceil(data.length / 3)
   const offsets: number[] = []
-  for (let offset = 0; offset < bytes.length; offset += step) offsets.push(offset)
+  for (let offset = 0; offset < data.length; offset += step) offsets.push(offset)
   // Out of order and concurrent on purpose: the server writes at each offset and
   // merges received ranges, so neither order nor overlap matters.
   const responses = await Promise.all(
     offsets.reverse().map((offset) => {
-      const chunk = new Uint8Array(bytes.subarray(offset, Math.min(offset + step, bytes.length)))
+      const chunk = new Uint8Array(data.subarray(offset, Math.min(offset + step, data.length)))
       return req(`/api/uploads/${uploadId}/chunk?offset=${offset}`, { method: 'PUT', body: chunk })
     }),
   )
@@ -70,16 +77,16 @@ async function uploadAll(): Promise<string> {
   return body.videoId
 }
 
-async function waitForDraft(id: string): Promise<void> {
+async function waitForStatus(id: string, expected: 'published' | 'draft'): Promise<void> {
   for (let i = 0; i < 100; i++) {
     const db = new Database(path.join(dir, 'index.sqlite'), { readonly: true })
     const row = db.query('SELECT status FROM videos WHERE id = ?').get(id) as { status: string } | null
     db.close()
-    if (row?.status === 'draft') return
+    if (row?.status === expected) return
     if (row?.status === 'failed') throw new Error('transcode failed')
     await new Promise((r) => setTimeout(r, 100))
   }
-  throw new Error('timed out waiting for draft')
+  throw new Error(`timed out waiting for ${expected}`)
 }
 
 describe('upload flow', () => {
@@ -118,16 +125,13 @@ describe('upload flow', () => {
     expect(body.bytes).toBe(half.length)
   })
 
-  test('chunks, completes, transcodes, publishes, then deletes', async () => {
+  test('transcodes and publishes without a label, then deletes', async () => {
     const videoId = await uploadAll()
-    await waitForDraft(videoId)
+    await waitForStatus(videoId, 'published')
 
-    const drafts = listVideos('ben', { all: true })
-    expect(drafts.some((v) => v.id === videoId)).toBe(true)
-    expect(listVideos('ben').some((v) => v.id === videoId)).toBe(false)
-
-    expect(publishVideo('ben', videoId)).toBe('ok')
-    expect(listVideos('ben').some((v) => v.id === videoId)).toBe(true)
+    const published = listVideos('ben').find((v) => v.id === videoId)
+    expect(published?.exercise).toBe('Unlabelled')
+    expect(published?.sets).toBe(1)
 
     const db = new Database(path.join(dir, 'index.sqlite'), { readonly: true })
     const row = db.query('SELECT rel_path, poster_path, master_path FROM videos WHERE id = ?').get(videoId) as {
@@ -143,24 +147,35 @@ describe('upload flow', () => {
     }
   })
 
-  test('refuses a second published clip for the same exercise and day', async () => {
-    const videoId = await uploadAll()
-    await waitForDraft(videoId)
-    expect(publishVideo('ben', videoId)).toBe('ok')
+  test('publishes several unlabelled clips from the same day', async () => {
+    const first = await uploadAll()
+    const second = await uploadAll(bytes2)
+    await waitForStatus(first, 'published')
+    await waitForStatus(second, 'published')
 
-    // A second draft with the same day/exercise, as if a duplicate label was submitted.
+    const ids = listVideos('ben').map((v) => v.id)
+    expect(ids).toContain(first)
+    expect(ids).toContain(second)
+
+    expect(deleteVideo('ben', first)).toBe('ok')
+    expect(deleteVideo('ben', second)).toBe('ok')
+  })
+
+  test('refuses a second published clip for the same labelled exercise and day', async () => {
+    // Auto-publish stops at the unique index; the row waits as a draft for the
+    // duplicate resolver. Insert the two sides directly so the publish path is isolated.
     const db = new Database(path.join(dir, 'index.sqlite'))
-    const first = db.query('SELECT shot_date, exercise FROM videos WHERE id = ?').get(videoId) as {
-      shot_date: string
-      exercise: string
-    }
-    db.query(
-      `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, rel_path, poster_path, sha256, source, status, created_at)
-       VALUES ('dupe00000001', 'ben', ?, '2026-10-01T00:00:00Z', ?, 'x.mp4', 'x.jpg', 'different-hash', 'test', 'draft', ?)`,
-    ).run(first.shot_date, first.exercise, new Date().toISOString())
+    const insert = db.query(
+      `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, sets, reps, rel_path, poster_path, sha256, source, status, created_at)
+       VALUES (?, 'ben', ?, '2026-10-02T18:00:00Z', 'Front Squat', 1, '5', ?, NULL, ?, 'test', ?, ?)`,
+    )
+    const now = new Date().toISOString()
+    insert.run('pub000000001', '2026-10-02', 'x1.mp4', 'hash-pub', 'published', now)
+    insert.run('dupe00000001', '2026-10-02', 'x2.mp4', 'hash-dupe', 'draft', now)
     db.close()
 
     expect(publishVideo('ben', 'dupe00000001')).toBe('duplicate')
-    expect(deleteVideo('ben', videoId)).toBe('ok')
+    expect(deleteVideo('ben', 'dupe00000001')).toBe('ok')
+    expect(deleteVideo('ben', 'pub000000001')).toBe('ok')
   })
 })
