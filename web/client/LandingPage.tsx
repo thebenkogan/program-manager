@@ -1,8 +1,6 @@
 import { Link } from './router'
 import { cn } from './components'
 
-const PHONE_DISPLAY = '267-799-6588'
-const PHONE_TEL = '+12677996588'
 const EMAIL = 'benkogan9@gmail.com'
 const INSTAGRAM_URL = 'https://instagram.com/coachbenkogan'
 
@@ -22,7 +20,6 @@ export function LandingPage() {
         </p>
 
         <ul className="mt-8 space-y-3">
-          <ContactRow label="Call or text" value={PHONE_DISPLAY} href={`tel:${PHONE_TEL}`} />
           <ContactRow label="Email" value={EMAIL} href={`mailto:${EMAIL}`} />
           <ContactRow label="Instagram" value="@coachbenkogan" href={INSTAGRAM_URL} external />
         </ul>
