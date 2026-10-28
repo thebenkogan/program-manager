@@ -1,6 +1,6 @@
 import type { Exercise, NextWorkoutResponse } from '../shared/api'
 import { endpoints, useFetch } from './api'
-import { Card, Loaded, Muted, PageTitle, cn } from './components'
+import { Card, Loaded, Muted, PageTitle } from './components'
 import { formatDate, formatPrescription } from './format'
 import { suggestWarmup } from '../shared/warmup'
 
@@ -56,12 +56,7 @@ export function ExerciseRow({ ex, showWarmup = false }: { ex: Exercise; showWarm
             {warmup.map((set, j) => (
               <span
                 key={`${set.weight}-${set.reps}-${j}`}
-                className={cn(
-                  'rounded-full border px-1.5 py-0.5 text-[11px] leading-4 tabular-nums',
-                  j === 0
-                    ? 'border-amber-500/25 bg-amber-500/10 text-amber-200/90'
-                    : 'border-zinc-700/60 bg-zinc-800/40 text-zinc-400',
-                )}
+                className="rounded-full border border-zinc-700/60 bg-zinc-800/40 px-1.5 py-0.5 text-[11px] leading-4 tabular-nums text-zinc-400"
               >
                 {set.weight}×{set.reps}
               </span>
