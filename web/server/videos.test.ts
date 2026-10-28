@@ -85,6 +85,19 @@ describe('video routes', () => {
     expect(res.headers.get('content-type')).toBe('image/jpeg')
   })
 
+  test('offers an attachment download with a readable filename', async () => {
+    const res = (await call(`/api/videos/${ID}?download=1`))!
+    expect(res.status).toBe(200)
+    const disposition = res.headers.get('content-disposition') ?? ''
+    expect(disposition).toContain('attachment;')
+    expect(disposition).toContain('filename="high-bar-back-squat-280lb-2026-10-24.mp4"')
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(BODY)
+
+    // The poster endpoint never turns into a download.
+    const poster = (await call(`/api/videos/${ID}/poster?download=1`))!
+    expect(poster.headers.get('content-disposition')).toBeNull()
+  })
+
   test('never lets another client fetch by id', async () => {
     expect((await call(`/api/videos/${ID}`, andi))!.status).toBe(404)
     expect((await call(`/api/videos/does-not-exist`))!.status).toBe(404)

@@ -123,7 +123,23 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
 }
 
-function serveFile(request: Request, filePath: string): Response {
+/** Filesystem/header-safe slug for a suggested download name. */
+function fileSlug(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  return slug || 'clip'
+}
+
+/** RFC 6266 attachment header: ASCII fallback plus the exact UTF-8 name. */
+function attachmentHeader(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '')
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
+}
+
+function serveFile(request: Request, filePath: string, downloadName?: string): Response {
   const file = Bun.file(filePath)
   const type = MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
   const base: Record<string, string> = {
@@ -131,6 +147,7 @@ function serveFile(request: Request, filePath: string): Response {
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'private, max-age=86400',
   }
+  if (downloadName) base['Content-Disposition'] = attachmentHeader(downloadName)
 
   const range = request.headers.get('range')
   if (!range) {
@@ -428,5 +445,12 @@ export async function handleVideoRoutes(
 
   const file = Bun.file(filePath)
   if (!(await file.exists())) return json({ error: 'not_found' }, 404)
-  return serveFile(request, filePath)
+  // ?download=1 asks the browser to save rather than stream. Nicer name than the
+  // opaque id, e.g. high-bar-back-squat-280lb-2026-10-24.mp4.
+  let downloadName: string | undefined
+  if (!media![2] && url.searchParams.has('download')) {
+    const weight = row.weight !== null ? `-${row.weight}lb` : ''
+    downloadName = `${fileSlug(row.exercise)}${weight}-${row.shot_date}${path.extname(filePath).toLowerCase()}`
+  }
+  return serveFile(request, filePath, downloadName)
 }

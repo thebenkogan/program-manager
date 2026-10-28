@@ -124,6 +124,13 @@ export function VideoPlayerModal({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <a
+              href={`${video.videoUrl}?download=1`}
+              download
+              className="cursor-pointer rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              Download
+            </a>
             {onDeleted && (
               <button
                 type="button"
