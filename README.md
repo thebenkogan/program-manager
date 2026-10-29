@@ -50,3 +50,4 @@ Your `data/` dir is its own git repo (the code repo ignores it, so client info i
 | `bun run dev` | start the app |
 | `bun run validate` | validate all program files in `data/programs/` |
 | `bun run seed-data` | initialize an empty `data/` repo for a fresh install |
+| `bun run test` | run the suite; starts a disposable Postgres (`coach-test-db`, 127.0.0.1:55432) for the DB-backed auth/invite/API tests. `--no-db` skips it |

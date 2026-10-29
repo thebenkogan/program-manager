@@ -217,7 +217,9 @@ bun run scripts/sync-program.ts <programId>             # commit + resync calend
 
 The script validates, commits the program file using the pending message
 as the commit message (so Versions history stays meaningful), then calls
-`resyncProgram()` and writes `data/state/sync/{programId}.json`. It mirrors the
+`resyncProgram()` and writes `data/state/sync/{programId}.json`. Resync is
+incremental: it matches events by session date and patches only the ones whose
+content changed, so event IDs persist. It mirrors the
 UI's Apply + Resync. Commit must precede resync — the API rejects a
 resync while a pending diff exists.
 

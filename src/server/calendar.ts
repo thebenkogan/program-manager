@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import type { Exercise, ProgramDocument, Session, SyncState } from '../shared/types.ts'
 import { docHash } from './hash.ts'
+import { desiredEvents, planSync, type RemoteEvent } from './sync-plan.ts'
 
 let cachedClient: ReturnType<typeof google.calendar> | null = null
 
@@ -115,7 +116,46 @@ export async function syncProgram(doc: ProgramDocument): Promise<SyncState> {
   }
 }
 
-export async function resyncProgram(doc: ProgramDocument, prev: SyncState | null): Promise<SyncState> {
+async function listEvents(
+  client: ReturnType<typeof google.calendar>,
+  calendarId: string,
+): Promise<RemoteEvent[]> {
+  const out: RemoteEvent[] = []
+  let pageToken: string | undefined
+  do {
+    const res = await client.events.list({
+      calendarId,
+      maxResults: 250,
+      singleEvents: true,
+      showDeleted: false,
+      pageToken,
+    })
+    for (const ev of res.data.items ?? []) {
+      if (!ev.id) continue
+      out.push({
+        id: ev.id,
+        summary: ev.summary,
+        description: ev.description,
+        startDate: ev.start?.date ?? null,
+        endDate: ev.end?.date ?? null,
+      })
+    }
+    pageToken = res.data.nextPageToken ?? undefined
+  } while (pageToken)
+  return out
+}
+
+/**
+ * Reconcile the program with the calendar instead of rebuilding it: events
+ * are matched by session date and patched in place, so IDs (and any manual
+ * notes, reminders or attachments on the event) survive a resync. Only dates
+ * that disappeared from the program are deleted.
+ */
+export async function resyncProgram(
+  doc: ProgramDocument,
+  prev: SyncState | null,
+  log: (msg: string) => void = () => {},
+): Promise<SyncState> {
   const client = getCalendarClient()
 
   let calendarId = prev?.calendarId
@@ -143,32 +183,84 @@ export async function resyncProgram(doc: ProgramDocument, prev: SyncState | null
     },
   })
 
-  let pageToken: string | undefined
-  do {
-    const listRes = await client.events.list({
-      calendarId,
-      maxResults: 250,
-      singleEvents: true,
-      pageToken,
-    })
-    for (const ev of listRes.data.items ?? []) {
-      try {
-        await client.events.delete({ calendarId, eventId: ev.id! })
-      } catch {
-        // event may already be gone
-      }
-    }
-    pageToken = listRes.data.nextPageToken ?? undefined
-  } while (pageToken)
+  const remote = await listEvents(client, calendarId)
+  const desired = desiredEvents(
+    doc,
+    (title) => `🏋️ ${title}`,
+    (session) => eventDescription(doc, session),
+    (date) => addDays(date, 1),
+  )
+  const plan = planSync(desired, remote, prev?.events ?? [])
+  log(
+    `calendar: ${plan.updates.length} updated, ${plan.unchanged.length} unchanged, ` +
+      `${plan.inserts.length} added, ${plan.deletes.length} removed`,
+  )
 
-  const events = await insertEvents(client, calendarId, doc)
+  for (const ev of plan.deletes) {
+    try {
+      await client.events.delete({ calendarId, eventId: ev.id })
+    } catch {
+      // event may already be gone
+    }
+  }
+
+  const refs = new Map<string, SyncState['events'][number]>()
+
+  for (const { eventId, body } of plan.updates) {
+    const patched = await client.events.patch({
+      calendarId,
+      eventId,
+      requestBody: {
+        summary: body.summary,
+        description: body.description,
+        start: { date: body.date },
+        end: { date: body.endDate },
+      },
+    })
+    refs.set(body.date, { date: body.date, eventId, link: patched.data.htmlLink ?? '' })
+  }
+
+  for (const { eventId, date } of plan.unchanged) {
+    const link = prev?.events.find((e) => e.eventId === eventId)?.link ?? ''
+    refs.set(date, { date, eventId, link })
+  }
+
+  for (const body of plan.inserts) {
+    const created = await client.events.insert({
+      calendarId,
+      requestBody: {
+        summary: body.summary,
+        description: body.description,
+        start: { date: body.date },
+        end: { date: body.endDate },
+      },
+    })
+    refs.set(body.date, { date: body.date, eventId: created.data.id!, link: created.data.htmlLink ?? '' })
+  }
+
   return {
     syncedHash: docHash(doc),
     syncedAt: new Date().toISOString(),
     calendarId,
     addLink: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(calendarId)}`,
-    events,
+    events: doc.sessions.map((session) => refs.get(session.date)!),
   }
+}
+
+/** Full rebuild: wipe every event on the program calendar and re-insert. */
+export async function rebuildProgram(doc: ProgramDocument, prev: SyncState | null): Promise<SyncState> {
+  const client = getCalendarClient()
+  const calendarId = prev?.calendarId
+  if (calendarId) {
+    for (const ev of await listEvents(client, calendarId)) {
+      try {
+        await client.events.delete({ calendarId, eventId: ev.id })
+      } catch {
+        // already gone
+      }
+    }
+  }
+  return resyncProgram(doc, prev)
 }
 
 export async function deleteCalendar(calendarId: string): Promise<void> {

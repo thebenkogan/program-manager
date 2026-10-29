@@ -77,7 +77,9 @@ if (dirty) {
   clearPendingMessage(id)
 }
 
-const state = prev ? await resyncProgram(file.doc, prev) : await syncProgram(file.doc)
+const state = prev
+  ? await resyncProgram(file.doc, prev, (msg) => console.log(msg))
+  : await syncProgram(file.doc)
 writeSyncState(id, state)
 console.log(`calendar synced: hash ${state.syncedHash}, ${state.events.length} events`)
 console.log(state.addLink)

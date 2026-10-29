@@ -16,7 +16,7 @@
     "video:scan": "bun run scripts/videos/scan.ts",
     "video:verify": "bun run scripts/videos/verify.ts",
     "defer-workout": "bun run scripts/defer.ts",
-    "test": "bun test"
+    "test": "bun run scripts/test-db.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
