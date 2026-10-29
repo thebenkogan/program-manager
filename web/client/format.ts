@@ -45,6 +45,19 @@ export function formatPrescription(sets: number, reps: string, intensity?: strin
   return intensity ? `${base} @ ${intensity}` : base
 }
 
+/** Rep label with a unit: "5 reps", "1 rep". Unitless schemes (AMRAP) pass through. */
+function repsLabel(reps: string): string {
+  const numbers = reps.match(/\d+(?:\.\d+)?/g)
+  if (!numbers) return reps
+  return `${reps} ${numbers.some((n) => Number(n) !== 1) ? 'reps' : 'rep'}`
+}
+
+/** "3 sets x 5 reps @ 150 lb" — the spelled-out variant of formatPrescription. */
+export function formatPrescriptionLong(sets: number, reps: string, intensity?: string): string {
+  const base = `${pluralize(sets, 'set')} x ${repsLabel(reps)}`
+  return intensity ? `${base} @ ${intensity}` : base
+}
+
 /** "+10 lb", "-5 lb", "0 lb" */
 export function formatChange(lb: number): string {
   const rounded = Math.round(lb * 10) / 10

@@ -1,7 +1,7 @@
 import type { Exercise, NextWorkoutResponse } from '../shared/api'
 import { endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle } from './components'
-import { formatDate, formatPrescription } from './format'
+import { formatDate, formatPrescription, formatPrescriptionLong } from './format'
 import { suggestWarmup } from '../shared/warmup'
 
 export function NextPage() {
@@ -29,7 +29,7 @@ export function NextPage() {
               <Card flush>
                 <ul className="divide-y divide-zinc-800">
                   {session.exercises.map((ex, i) => (
-                    <ExerciseRow key={`${ex.name}-${i}`} ex={ex} showWarmup />
+                    <ExerciseRow key={`${ex.name}-${i}`} ex={ex} showWarmup spelledOut />
                   ))}
                 </ul>
               </Card>
@@ -41,12 +41,24 @@ export function NextPage() {
   )
 }
 
-export function ExerciseRow({ ex, showWarmup = false }: { ex: Exercise; showWarmup?: boolean }) {
+export function ExerciseRow({
+  ex,
+  showWarmup = false,
+  spelledOut = false,
+}: {
+  ex: Exercise
+  showWarmup?: boolean
+  /** Spell out units: "3 sets x 5 reps @ 150 lb" instead of "3 x 5 @ 150 lb". */
+  spelledOut?: boolean
+}) {
   const warmup = showWarmup ? suggestWarmup(ex.name, ex.intensity) : []
+  const prescription = spelledOut
+    ? formatPrescriptionLong(ex.sets, ex.reps, ex.intensity)
+    : formatPrescription(ex.sets, ex.reps, ex.intensity)
   return (
     <li className="px-4 py-3.5">
       <p className="font-medium text-zinc-100">{ex.name}</p>
-      <p className="mt-0.5 text-sm text-zinc-300">{formatPrescription(ex.sets, ex.reps, ex.intensity)}</p>
+      <p className="mt-0.5 text-sm text-zinc-300">{prescription}</p>
       {ex.backoff && <p className="mt-0.5 text-sm text-zinc-400">Back-off: {ex.backoff}</p>}
       {ex.supersetWith && <p className="mt-0.5 text-xs text-zinc-500">Superset with {ex.supersetWith}</p>}
       {warmup.length > 0 && (

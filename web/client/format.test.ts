@@ -5,6 +5,7 @@ import {
   formatDate,
   formatLongDate,
   formatPrescription,
+  formatPrescriptionLong,
   formatShortDate,
   formatWeight,
   groupBy,
@@ -29,6 +30,15 @@ describe('formatPrescription', () => {
     expect(formatPrescription(3, '5')).toBe('3 x 5')
     expect(formatPrescription(3, '5', '80%')).toBe('3 x 5 @ 80%')
     expect(formatPrescription(4, '6-8', 'RPE 8')).toBe('4 x 6-8 @ RPE 8')
+  })
+})
+
+describe('formatPrescriptionLong', () => {
+  test('spells out sets and reps', () => {
+    expect(formatPrescriptionLong(3, '5', '150 lb')).toBe('3 sets x 5 reps @ 150 lb')
+    expect(formatPrescriptionLong(1, '1', '225 lb')).toBe('1 set x 1 rep @ 225 lb')
+    expect(formatPrescriptionLong(2, '8-12')).toBe('2 sets x 8-12 reps')
+    expect(formatPrescriptionLong(5, 'AMRAP', '135 lb')).toBe('5 sets x AMRAP @ 135 lb')
   })
 })
 
