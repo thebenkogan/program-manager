@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { VideoItem, VideosResponse } from '../shared/api'
 import { endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
+import { formatLongDate } from './format'
 import { Link } from './router'
-import { VideoPlayerModal, VideoRow } from './videos-ui'
+import { Badge, VideoPlayerModal, VideoRow } from './videos-ui'
 
 function monthLabel(month: string): string {
   const [y, m] = month.split('-').map(Number)
@@ -16,9 +17,23 @@ function initialFilter(): string {
 }
 
 export function VideosPage() {
-  const state = useFetch<VideosResponse>(endpoints.videos)
+  const state = useFetch<VideosResponse>(`${endpoints.videos}?status=all`)
   const [exercise, setExercise] = useState(initialFilter)
   const [playing, setPlaying] = useState<VideoItem | null>(null)
+
+  const all = state.data?.videos ?? []
+  const published = all.filter((v) => v.status === 'published')
+  const pending = all.filter((v) => v.status !== 'published')
+  const encoding = pending.some((v) => v.status === 'processing')
+
+  // A finished upload is visible before it publishes. Poll while anything is
+  // still encoding so the placeholder turns into a real row on its own.
+  const refresh = state.refresh
+  useEffect(() => {
+    if (!encoding) return
+    const timer = setInterval(refresh, 4000)
+    return () => clearInterval(timer)
+  }, [encoding, refresh])
 
   return (
     <>
@@ -47,13 +62,75 @@ export function VideosPage() {
       </header>
 
       <Loaded state={state}>
-        {(data) => <VideoLibrary videos={data.videos} exercise={exercise} setExercise={setExercise} onPlay={setPlaying} />}
+        {() => (
+          <>
+            {pending.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="px-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Not published yet</h2>
+                <Card flush>
+                  <div className="divide-y divide-zinc-800/70 px-2">
+                    {pending.map((video) => (
+                      <PendingVideoRow key={video.id} video={video} />
+                    ))}
+                  </div>
+                </Card>
+              </section>
+            )}
+            {published.length > 0 ? (
+              <VideoLibrary videos={published} exercise={exercise} setExercise={setExercise} onPlay={setPlaying} />
+            ) : (
+              pending.length === 0 && (
+                <Card>
+                  <Muted>No videos yet.</Muted>
+                  <Muted className="mt-2 text-xs">
+                    Clips appear here once they are ingested. Each one is tagged with its exercise, date, weight and sets.
+                  </Muted>
+                </Card>
+              )
+            )}
+          </>
+        )}
       </Loaded>
 
       {playing && (
         <VideoPlayerModal video={playing} onClose={() => setPlaying(null)} onDeleted={() => state.reload()} />
       )}
     </>
+  )
+}
+
+/** A clip that exists but is not published yet: encoding, failed, or a draft. */
+function PendingVideoRow({ video }: { video: VideoItem }) {
+  const processing = video.status === 'processing'
+  const failed = video.status === 'failed'
+  const detail = processing
+    ? 'Publishes on its own when encoding finishes'
+    : failed
+      ? 'Encoding failed — re-upload it'
+      : 'Same exercise and day as another clip — resolve it on Upload'
+  return (
+    <div className="flex items-center gap-3 px-1 py-2">
+      <span className="grid h-14 w-24 shrink-0 place-items-center rounded-md border border-dashed border-zinc-700 bg-zinc-950">
+        <span className={cn('text-[10px] font-medium', processing ? 'animate-pulse text-zinc-300' : 'text-zinc-500')}>
+          {processing ? 'Encoding…' : failed ? 'Failed' : 'Draft'}
+        </span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-zinc-300">
+          {video.exercise === 'Unlabelled' ? 'Unlabelled clip' : video.exercise}
+        </span>
+        <span className="mt-0.5 block text-xs text-zinc-500">{formatLongDate(video.date)}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5">
+          <Badge tone="warn">{processing ? 'Encoding' : failed ? 'Failed' : 'Draft'}</Badge>
+          <span className="text-[11px] text-zinc-500">{detail}</span>
+        </span>
+      </span>
+      {!processing && (
+        <Link to="/upload" className="shrink-0 text-[11px] text-zinc-400 underline underline-offset-2 hover:text-zinc-200">
+          Upload
+        </Link>
+      )}
+    </div>
   )
 }
 
