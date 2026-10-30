@@ -1,7 +1,7 @@
 // HTTP handler for /api/me/* . Identity comes only from the injected resolver.
 import type { MeResponse, NextWorkoutResponse, ProgramResponse, ProgressResponse } from '../shared/api'
 import { buildProgress, classifySessions, nextSession, todayPacific } from '../shared/progress'
-import { readCommittedProgram } from './programs'
+import { readCommittedProgram, readSessionHistory } from './programs'
 
 export interface ResolvedClient {
   clientId: string
@@ -72,6 +72,8 @@ export async function handleApi(request: Request, resolve: Resolver): Promise<Re
     return json(body)
   }
 
-  const body: ProgressResponse = buildProgress(doc.sessions, today)
+  // Include superseded blocks so weights earned before the current block still
+  // appear. Only /progress needs them; /next and /program stay on the live block.
+  const body: ProgressResponse = buildProgress(readSessionHistory(program), today)
   return json(body)
 }

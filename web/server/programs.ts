@@ -1,7 +1,8 @@
 // Reads program data from the COMMITTED state of the data repo (git HEAD).
 // Uncommitted working-tree edits never reach clients.
 import { execFileSync } from 'node:child_process'
-import type { Client, ProgramDocument, ProgramFile } from '../../src/shared/types'
+import type { Client, ProgramDocument, ProgramFile, Session } from '../../src/shared/types'
+import { mergeProgramHistory, type ProgramVersion } from '../shared/history'
 
 export { todayPacific } from '../shared/progress'
 
@@ -18,10 +19,18 @@ const GIT_OPTS = {
   maxBuffer: 32 * 1024 * 1024,
 }
 
-/** Contents of a file at HEAD, or null if it does not exist or git fails. */
-function gitShow(path: string): string | null {
+/** Contents of a file at a revision (default HEAD), or null if absent. */
+function gitShow(path: string, rev = 'HEAD'): string | null {
   try {
-    return execFileSync('git', ['-C', dataDir(), 'show', `HEAD:${path}`], GIT_OPTS)
+    return execFileSync('git', ['-C', dataDir(), 'show', `${rev}:${path}`], GIT_OPTS)
+  } catch {
+    return null
+  }
+}
+
+function headSha(): string | null {
+  try {
+    return execFileSync('git', ['-C', dataDir(), 'rev-parse', 'HEAD'], GIT_OPTS).trim()
   } catch {
     return null
   }
@@ -55,6 +64,8 @@ export interface CommittedProgram {
   programName: string
   doc: ProgramDocument
   clientName: string
+  /** Repo-relative path, e.g. programs/ben-starting-strength.json. */
+  path: string
 }
 
 /**
@@ -78,7 +89,59 @@ export function readCommittedProgram(clientId: string): CommittedProgram | null 
       programName: file.doc.name,
       doc: file.doc,
       clientName: client?.name ?? clientId,
+      path,
     }
   }
   return null
+}
+
+/** Commit shas that touched one program file, oldest first. */
+function programCommits(path: string): string[] {
+  try {
+    return execFileSync('git', ['-C', dataDir(), 'log', '--reverse', '--format=%H', '--', path], GIT_OPTS)
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+/** Every session ever committed for this program file, one per date. */
+function archivedVersions(path: string): ProgramVersion[] {
+  const versions: ProgramVersion[] = []
+  for (const sha of programCommits(path)) {
+    const raw = gitShow(path, sha)
+    if (!raw) continue
+    let file: ProgramFile
+    try {
+      file = JSON.parse(raw) as ProgramFile
+    } catch {
+      continue
+    }
+    if (Array.isArray(file?.doc?.sessions)) versions.push({ sha, sessions: file.doc.sessions })
+  }
+  return versions
+}
+
+// Rebuilding the archive shells out to git once per commit (about 80 today).
+// Cache it per (HEAD, path): a new data commit is a new cache key.
+const historyCache = new Map<string, Session[]>()
+
+/**
+ * The live program's sessions plus every session from superseded blocks, one
+ * per date (the live program wins where dates overlap). Recomputed from the data
+ * repo's git history so past blocks keep counting after they are replaced.
+ */
+export function readSessionHistory(program: CommittedProgram): Session[] {
+  const head = headSha()
+  if (!head) return program.doc.sessions
+  const key = `${head}:${program.path}`
+  let archived = historyCache.get(key)
+  if (!archived) {
+    archived = mergeProgramHistory(archivedVersions(program.path), [])
+    historyCache.clear()
+    historyCache.set(key, archived)
+  }
+  return mergeProgramHistory([{ sha: head, sessions: archived }], program.doc.sessions)
 }
