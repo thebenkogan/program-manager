@@ -1,17 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
 import { apiPost, endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
 import { Link } from './router'
 import { isUnlabelled, VideoPlayerModal } from './videos-ui'
-import { formatLongDate } from './format'
+import { formatLongDate, formatShotTime } from './format'
 
 /** Temporary coach tool: fill in labels for imported clips. */
 export function LabelPage() {
-  const videos = useFetch<VideosResponse>(endpoints.videos)
+  const videos = useFetch<VideosResponse>(`${endpoints.videos}?status=all`)
   const program = useFetch<ProgramResponse>(endpoints.program)
   const [onlyUnlabelled, setOnlyUnlabelled] = useState(true)
   const [playing, setPlaying] = useState<VideoItem | null>(null)
+
+  // Transcodes finish on the server in a couple of minutes; poll while any clip
+  // is still encoding so a finished row stops being a placeholder on its own.
+  const refresh = videos.refresh
+  const encoding = (videos.data?.videos ?? []).some((v) => v.status === 'processing')
+  useEffect(() => {
+    if (!encoding) return
+    const timer = setInterval(refresh, 4000)
+    return () => clearInterval(timer)
+  }, [encoding, refresh])
 
   const exercises = useMemo(() => {
     const names = new Set<string>()
@@ -97,6 +107,8 @@ function LabelCard({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const processing = video.status === 'processing'
+  const failed = video.status === 'failed'
   const canSave = exercise.trim().length > 0 && !saving
 
   async function save() {
@@ -126,17 +138,29 @@ function LabelCard({
         <button
           type="button"
           onClick={onPlay}
-          className="relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-md bg-zinc-950"
+          disabled={processing || failed}
+          className="relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-md bg-zinc-950 disabled:cursor-default"
           aria-label={`Play ${video.exercise} on ${video.date}`}
         >
-          <img src={video.posterUrl} alt="" className="h-full w-full object-cover" />
+          <img src={video.posterUrl} alt="" className={cn('h-full w-full object-cover', processing && 'opacity-40')} />
           <span className="absolute inset-0 grid place-items-center">
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-[10px] text-white">▶</span>
+            {processing ? (
+              <span className="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">Encoding…</span>
+            ) : failed ? (
+              <span className="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">Failed</span>
+            ) : (
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-[10px] text-white">▶</span>
+            )}
           </span>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-zinc-100">{formatLongDate(video.date)}</p>
-          <p className="mt-0.5 text-xs text-zinc-400">{video.exercise}</p>
+          <p className="text-sm font-medium text-zinc-100">
+            {formatLongDate(video.date)}
+            {video.shotAt ? ` · ${formatShotTime(video.shotAt)}` : ''}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {processing ? 'Encoding — labels can be set now' : failed ? 'Encoding failed' : video.exercise}
+          </p>
           {saved && <p className="mt-1 text-xs font-medium text-emerald-400">Saved</p>}
         </div>
       </div>

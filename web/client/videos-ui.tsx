@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { VideoItem } from '../shared/api'
 import { cn } from './components'
-import { formatLongDate } from './format'
+import { formatLongDate, formatShotTime } from './format'
 
 export function formatDuration(seconds: number | null): string {
   if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return ''
@@ -21,8 +21,13 @@ export function videoLabel(v: VideoItem): string {
   return parts.join(' · ')
 }
 
+/**
+ * A clip is unlabelled while its exercise is still the placeholder. Uploads
+ * always write `sets = 1`, so testing the set fields would never match and
+ * every uploaded clip would read as labelled.
+ */
 export function isUnlabelled(v: VideoItem): boolean {
-  return v.weight === null && v.sets === null && !v.reps
+  return v.exercise === 'Unlabelled' || v.exercise.trim() === ''
 }
 
 export function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'warn' }) {
@@ -58,10 +63,15 @@ export function VideoRow({ video, onPlay, showExercise }: { video: VideoItem; on
       </span>
       <span className="min-w-0 flex-1">
         {showExercise && <span className="block truncate text-sm font-medium text-zinc-100">{video.exercise}</span>}
-        <span className={cn('block text-xs text-zinc-400', showExercise && 'mt-0.5')}>{formatLongDate(video.date)}</span>
+        <span className={cn('block text-xs text-zinc-400', showExercise && 'mt-0.5')}>
+          {formatLongDate(video.date)}
+          {video.shotAt ? ` · ${formatShotTime(video.shotAt)}` : ''}
+        </span>
         <span className="mt-1 flex flex-wrap items-center gap-1">
           {isUnlabelled(video) ? <Badge tone="warn">Unlabelled</Badge> : <Badge>{videoLabel(video)}</Badge>}
           {video.setIndex !== null && <Badge>Set {video.setIndex}</Badge>}
+          {video.status === 'processing' && <Badge>Encoding…</Badge>}
+          {video.status === 'failed' && <Badge tone="warn">Failed</Badge>}
         </span>
       </span>
     </button>

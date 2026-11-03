@@ -6,6 +6,7 @@ import {
   formatLongDate,
   formatPrescription,
   formatPrescriptionLong,
+  formatShotTime,
   formatShortDate,
   formatWeight,
   groupBy,
@@ -22,6 +23,21 @@ describe('formatDate', () => {
   test('short and long forms', () => {
     expect(formatShortDate('2026-10-03')).toBe('Oct 3')
     expect(formatLongDate('2026-10-03')).toBe('Oct 3, 2026')
+  })
+})
+
+describe('formatShotTime', () => {
+  test('formats ISO timestamps in Pacific time', () => {
+    // Nov 3 02:34 UTC = Nov 2 6:34 PM PST (DST ended Nov 1 2026).
+    expect(formatShotTime('2026-11-03T02:34:13.000Z')).toBe('6:34 PM')
+    // Jul 4 19:05 UTC = 12:05 PM PDT (DST in effect).
+    expect(formatShotTime('2026-07-04T19:05:00.000Z')).toBe('12:05 PM')
+  })
+  test('returns empty for missing or invalid input', () => {
+    expect(formatShotTime(null)).toBe('')
+    expect(formatShotTime(undefined)).toBe('')
+    expect(formatShotTime('')).toBe('')
+    expect(formatShotTime('not-a-date')).toBe('')
   })
 })
 

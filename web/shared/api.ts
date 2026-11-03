@@ -57,6 +57,8 @@ export interface VideoItem {
   id: string
   /** Calendar date the clip was shot (Pacific, YYYY-MM-DD). */
   date: string
+  /** Exact capture time from the source file's metadata (ISO), when present. */
+  shotAt: string | null
   /** Canonical program exercise name, e.g. "High Bar Back Squat". */
   exercise: string
   weight: number | null

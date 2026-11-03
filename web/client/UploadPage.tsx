@@ -3,7 +3,7 @@ import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
 import { apiPost, endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
 import { Link } from './router'
-import { formatLongDate } from './format'
+import { formatLongDate, formatShotTime } from './format'
 import { VideoPlayerModal } from './videos-ui'
 
 const CHUNK = 8 * 1024 * 1024
@@ -398,19 +398,33 @@ function DraftCard({
           type="button"
           onClick={onPlay}
           disabled={processing || failed}
-          className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md bg-zinc-950 disabled:opacity-50"
+          className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md bg-zinc-950 disabled:cursor-default"
         >
-          {!processing && !failed && (
-            <img src={video.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+          {!failed && (
+            <img
+              src={video.posterUrl}
+              alt=""
+              loading="lazy"
+              className={cn('h-full w-full object-cover', processing && 'opacity-40')}
+            />
           )}
-          <span className="absolute inset-0 grid place-items-center text-[10px] text-zinc-400">
-            {processing ? 'Encoding…' : failed ? 'Failed' : '▶'}
+          <span className="absolute inset-0 grid place-items-center">
+            {processing ? (
+              <span className="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">Encoding…</span>
+            ) : failed ? (
+              <span className="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">Failed</span>
+            ) : (
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-[10px] text-white">▶</span>
+            )}
           </span>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-zinc-100">{formatLongDate(video.date)}</p>
+          <p className="text-sm font-medium text-zinc-100">
+            {formatLongDate(video.date)}
+            {video.shotAt ? ` · ${formatShotTime(video.shotAt)}` : ''}
+          </p>
           <p className="mt-0.5 text-xs text-zinc-400">
-            {processing ? 'Transcoding — labels can be set now' : failed ? 'Encoding failed' : video.exercise}
+            {processing ? 'Encoding — labels can be set now' : failed ? 'Encoding failed' : video.exercise}
           </p>
           {saved && <p className="mt-1 text-xs font-medium text-emerald-400">Saved</p>}
         </div>

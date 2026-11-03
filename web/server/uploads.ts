@@ -304,10 +304,25 @@ async function complete(row: UploadRow, clientId: string): Promise<Response> {
   mkdirSync(path.join(mediaDir(), '_masters'), { recursive: true })
   renameSync(staged, masterAbs)
 
-  const base = `${date}_${slug(exercise)}_unlabelled_${id}`
+  const base = `${date}_${slug(exercise)}_${id}`
   const rel = path.join(clientId, date, `${base}.mp4`)
   const poster = path.join(clientId, date, `${base}.jpg`)
   mkdirSync(path.join(mediaDir(), clientId, date), { recursive: true })
+
+  // Poster immediately, not in the transcode queue. The queue is serial, so a
+  // second clip would wait a whole encode for its thumbnail and every processing
+  // card would look identical. One frame costs ~1s and makes the clip labelable
+  // at a glance. The encoder still retries if this fails.
+  try {
+    const at = Math.min(1, Math.max(0, (probeResult.durationS ?? 2) / 2))
+    execFileSync(
+      'ffmpeg',
+      ['-v', 'error', '-y', '-ss', String(at), '-i', masterAbs, '-frames:v', '1', '-q:v', '3', path.join(mediaDir(), poster)],
+      { stdio: 'ignore' },
+    )
+  } catch {
+    // A missing thumbnail must never fail the upload; transcode fills it in.
+  }
 
   db.query(
     `INSERT INTO videos (id, client_id, shot_date, shot_at, exercise, weight, sets, reps, set_index, notes,

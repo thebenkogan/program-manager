@@ -55,6 +55,7 @@ function toItem(row: VideoRow): VideoItem {
   return {
     id: row.id,
     date: row.shot_date,
+    shotAt: row.shot_at ?? null,
     exercise: row.exercise,
     weight: row.weight,
     sets: row.sets,

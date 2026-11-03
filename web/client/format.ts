@@ -39,6 +39,18 @@ export function formatExpiry(iso: string): string {
   })
 }
 
+/** "7:34 PM" from an ISO timestamp, in Pacific time. Empty when unknown. */
+export function formatShotTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+  })
+}
+
 /** "3 x 5 @ 80%" with optional intensity. */
 export function formatPrescription(sets: number, reps: string, intensity?: string): string {
   const base = `${sets} x ${reps}`
