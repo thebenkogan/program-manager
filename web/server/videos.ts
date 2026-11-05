@@ -36,19 +36,20 @@ interface VideoRow {
   created_at: string
 }
 
-let cached: { dir: string; db: Database | null } | null = null
+let cached: { dir: string; db: Database } | null = null
 
 function openDb(): Database | null {
   const dir = mediaDir()
   if (cached?.dir === dir) return cached.db
-  let db: Database | null = null
   try {
-    db = new Database(path.join(dir, 'index.sqlite'), { readonly: true })
+    const db = new Database(path.join(dir, 'index.sqlite'), { readonly: true })
+    cached = { dir, db }
+    return db
   } catch {
-    db = null
+    // Not cached: the index may not exist yet (fresh install, first upload).
+    // Caching the failure would hide every clip for the life of the process.
+    return null
   }
-  cached = { dir, db }
-  return db
 }
 
 function toItem(row: VideoRow): VideoItem {

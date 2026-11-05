@@ -10,25 +10,91 @@ const CHUNK = 8 * 1024 * 1024
 /** Chunks in flight at once. 8 x 8 MB = 64 MB of the file in flight. */
 const CONCURRENCY = 8
 const MAX_RETRIES = 3
+/** Speed averaging window: long enough to smooth 8 MB chunk bursts, short enough to react. */
+const SPEED_WINDOW_MS = 5000
+
+type Phase = 'waiting' | 'uploading' | 'finishing' | 'uploaded' | 'error'
 
 interface QueueItem {
   key: string
   file: File
-  progress: number
-  state: 'uploading' | 'done' | 'error'
+  phase: Phase
+  /** Bytes the server has acknowledged. */
+  sent: number
+  startedAt: number | null
+  finishedAt: number | null
   error?: string
   videoId?: string
+}
+
+/** A chunk acknowledgement, used to measure throughput over a rolling window. */
+interface Sample {
+  t: number
+  b: number
+}
+
+interface BatchSummary {
+  count: number
+  bytes: number
+  seconds: number
+}
+
+function mb(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1)
+}
+
+function mbps(bytesPerSecond: number): string {
+  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
+}
+
+function formatSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return ''
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`
+  return `${Math.floor(seconds / 60)}m ${String(Math.round(seconds % 60)).padStart(2, '0')}s`
+}
+
+function speedOf(item: QueueItem, samples: Map<string, Sample[]>): number {
+  if (item.phase !== 'uploading' || item.startedAt === null || item.sent === 0) return 0
+  const now = performance.now()
+  const list = (samples.get(item.key) ?? []).filter((s) => now - s.t <= SPEED_WINDOW_MS)
+  const first = list[0]
+  const last = list[list.length - 1]
+  if (first && last) {
+    const span = (last.t - first.t) / 1000
+    if (span >= 0.5) return (last.b - first.b) / span
+  }
+  // Not enough of a window yet (or chunks are still landing): average since start.
+  const elapsed = (now - item.startedAt) / 1000
+  return elapsed > 0.4 ? item.sent / elapsed : 0
 }
 
 /** Upload + label. Clips publish on their own as soon as encoding finishes. */
 export function UploadPage() {
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [busy, setBusy] = useState(false)
+  const [batch, setBatch] = useState<BatchSummary | null>(null)
   const [limit, setLimit] = useState(24)
   const [playing, setPlaying] = useState<VideoItem | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const samples = useRef(new Map<string, Sample[]>())
+  const batchTimer = useRef<number | null>(null)
   const drafts = useFetch<VideosResponse>(`${endpoints.videos}?status=all`)
   const program = useFetch<ProgramResponse>(endpoints.program)
+
+  // Chunk acknowledgements only arrive every 8 MB, so tick the clock while
+  // uploading to keep MB/s and the ETA moving between acknowledges.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!busy) return
+    const timer = setInterval(() => setTick((n) => n + 1), 500)
+    return () => clearInterval(timer)
+  }, [busy])
+
+  useEffect(() => {
+    return () => {
+      if (batchTimer.current) window.clearTimeout(batchTimer.current)
+    }
+  }, [])
 
   const exercises = useMemo(() => {
     const names = new Set<string>()
@@ -38,6 +104,11 @@ export function UploadPage() {
 
   const pending = (drafts.data?.videos ?? []).filter((v) => v.status !== 'published')
   const encoding = pending.some((v) => v.status === 'processing')
+
+  const totalBytes = queue.reduce((sum, i) => sum + i.file.size, 0)
+  const sentBytes = queue.reduce((sum, i) => sum + i.sent, 0)
+  const speed = queue.reduce((sum, i) => sum + speedOf(i, samples.current), 0)
+  const remainingSeconds = speed > 0 ? (totalBytes - sentBytes) / speed : 0
 
   // Transcodes finish on the server in under a couple of minutes. Poll while any
   // clip is still encoding so the card disappears (published) on its own instead
@@ -62,9 +133,12 @@ export function UploadPage() {
   }, [drafts.data])
 
   const uploadOne = useCallback(
-    async (file: File, key: string) => {
+    async (file: File, key: string): Promise<boolean> => {
       const set = (patch: Partial<QueueItem>) =>
         setQueue((items) => items.map((i) => (i.key === key ? { ...i, ...patch } : i)))
+      const startedAt = performance.now()
+      samples.current.set(key, [{ t: startedAt, b: 0 }])
+      set({ phase: 'uploading', startedAt })
       try {
         const created = await apiPost<{ uploadId: string }>('/api/uploads', {
           filename: file.name,
@@ -104,7 +178,12 @@ export function UploadPage() {
             throw new Error(body.error ?? `chunk ${res.status}`)
           }
           acknowledged += end - offset
-          set({ progress: Math.round((acknowledged / file.size) * 100) })
+          const list = samples.current.get(key) ?? []
+          list.push({ t: performance.now(), b: acknowledged })
+          // Keep the window small; twenty samples is plenty for any chunk count.
+          if (list.length > 20) list.splice(0, list.length - 20)
+          samples.current.set(key, list)
+          set({ sent: acknowledged })
         }
         const worker = async () => {
           while (nextOffset < offsets.length) {
@@ -114,6 +193,10 @@ export function UploadPage() {
         }
         await Promise.all(Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, worker))
 
+        // Last byte is in. Hashing, probing and the poster run in `complete()`,
+        // which can take a few seconds on a 4K clip — say so instead of sitting on 100%.
+        set({ phase: 'finishing', sent: file.size })
+
         const done = await fetch(`/api/uploads/${created.uploadId}/complete`, {
           method: 'POST',
           credentials: 'same-origin',
@@ -121,10 +204,12 @@ export function UploadPage() {
         const body = (await done.json().catch(() => ({}))) as { videoId?: string; error?: string }
         if (done.status === 409 && body.error === 'duplicate') throw new Error('This clip is already in your library')
         if (!done.ok || !body.videoId) throw new Error(body.error ?? 'could not finish upload')
-        set({ state: 'done', progress: 100, videoId: body.videoId })
+        set({ phase: 'uploaded', sent: file.size, videoId: body.videoId, finishedAt: Date.now() })
         drafts.reload()
+        return true
       } catch (error) {
-        set({ state: 'error', error: error instanceof Error ? error.message : 'upload failed' })
+        set({ phase: 'error', error: error instanceof Error ? error.message : 'upload failed' })
+        return false
       }
     },
     [drafts],
@@ -132,17 +217,39 @@ export function UploadPage() {
 
   async function start(files: FileList | null) {
     if (!files || files.length === 0) return
+    if (batchTimer.current) {
+      window.clearTimeout(batchTimer.current)
+      batchTimer.current = null
+    }
+    setBatch(null)
     const items = [...files].map((file) => ({
       key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
       file,
-      progress: 0,
-      state: 'uploading' as const,
+      phase: 'waiting' as const,
+      sent: 0,
+      startedAt: null,
+      finishedAt: null,
     }))
+    samples.current.clear()
     setQueue(items)
     setBusy(true)
-    for (const item of items) await uploadOne(item.file, item.key)
+    const began = performance.now()
+    let count = 0
+    let bytes = 0
+    for (const item of items) {
+      if (await uploadOne(item.file, item.key)) {
+        count += 1
+        bytes += item.file.size
+      }
+    }
     setBusy(false)
     drafts.reload()
+    // Keep failed rows on screen; the successful ones collapse into a summary.
+    setQueue((current) => current.filter((i) => i.phase === 'error'))
+    if (count > 0) {
+      setBatch({ count, bytes, seconds: (performance.now() - began) / 1000 })
+      batchTimer.current = window.setTimeout(() => setBatch(null), 12000)
+    }
   }
 
   async function discard(video: VideoItem) {
@@ -199,7 +306,7 @@ export function UploadPage() {
         }}
       />
 
-      {queue.length === 0 && pending.length === 0 ? (
+      {!batch && queue.length === 0 && pending.length === 0 ? (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
@@ -220,26 +327,113 @@ export function UploadPage() {
       )}
 
       {queue.length > 0 && (
-        <Card flush>
-          <div className="divide-y divide-zinc-800/70 px-3">
-            {queue.map((item) => (
-              <div key={item.key} className="py-2">
-                <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate text-zinc-200">{item.file.name}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-zinc-500">
-                    {item.state === 'error' ? 'failed' : `${item.progress}%`}
-                  </span>
-                </div>
-                <div className="mt-1 h-1 overflow-hidden rounded bg-zinc-800">
-                  <div
-                    className={cn('h-full', item.state === 'error' ? 'bg-red-500' : 'bg-zinc-100')}
-                    style={{ width: `${item.progress}%` }}
-                  />
-                </div>
-                {item.error && <p className="mt-1 text-xs text-red-300">{item.error}</p>}
-              </div>
-            ))}
-          </div>
+        <>
+          {busy && (
+            <div className="flex items-baseline justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5 text-xs text-zinc-400">
+              <span>
+                <span className="font-semibold text-zinc-100">
+                  {queue.length} {queue.length === 1 ? 'clip' : 'clips'}
+                </span>{' '}
+                · {mb(totalBytes)} MB
+              </span>
+              <span className="tabular-nums">
+                {speed > 0 ? (
+                  <>
+                    <span className="font-semibold text-zinc-100">{mbps(speed)}</span> · ~
+                    {formatSeconds(remainingSeconds)} left
+                  </>
+                ) : (
+                  'starting…'
+                )}
+              </span>
+            </div>
+          )}
+          <Card flush>
+            <div className="divide-y divide-zinc-800/70 px-3">
+              {queue.map((item) => {
+                const pct =
+                  item.phase === 'waiting' || item.phase === 'uploading'
+                    ? item.file.size > 0
+                      ? Math.round((item.sent / item.file.size) * 100)
+                      : 0
+                    : 100
+                const itemSpeed = speedOf(item, samples.current)
+                const elapsed =
+                  item.startedAt !== null && item.finishedAt !== null
+                    ? (item.finishedAt - item.startedAt) / 1000
+                    : 0
+                return (
+                  <div key={item.key} className="py-2">
+                    <div className="flex items-baseline justify-between gap-2 text-sm">
+                      <span className="min-w-0 flex-1 truncate text-zinc-200">{item.file.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-zinc-400">
+                        {item.phase === 'waiting' || item.phase === 'error'
+                          ? `${mb(item.file.size)} MB`
+                          : `${mb(item.sent)} / ${mb(item.file.size)} MB`}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded bg-zinc-800">
+                      <div
+                        className={cn(
+                          'h-full transition-[width] duration-300',
+                          item.phase === 'error'
+                            ? 'bg-red-500'
+                            : item.phase === 'uploaded'
+                              ? 'bg-emerald-400'
+                              : item.phase === 'waiting'
+                                ? 'bg-zinc-600'
+                                : 'bg-zinc-100',
+                          item.phase === 'finishing' && 'animate-pulse',
+                        )}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 flex justify-between gap-2 text-[11px] tabular-nums text-zinc-500">
+                      <span className="min-w-0 truncate">
+                        {item.phase === 'waiting' && 'Waiting'}
+                        {item.phase === 'uploading' &&
+                          (itemSpeed > 0 ? (
+                            <span className="font-medium text-zinc-300">{mbps(itemSpeed)}</span>
+                          ) : (
+                            'Starting…'
+                          ))}
+                        {item.phase === 'finishing' && 'Finishing upload…'}
+                        {item.phase === 'uploaded' && (
+                          <span className="font-medium text-emerald-400">Uploaded · encoding</span>
+                        )}
+                        {item.phase === 'error' && (
+                          <span className="text-red-300">{item.error}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0">
+                        {item.phase === 'uploading' &&
+                          itemSpeed > 0 &&
+                          `~${formatSeconds((item.file.size - item.sent) / itemSpeed)} left`}
+                        {item.phase === 'uploaded' && formatSeconds(elapsed)}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        </>
+      )}
+
+      {batch && (
+        <Card>
+          <p className="text-sm font-medium text-emerald-400">
+            {batch.count === 1 ? 'Clip uploaded' : `${batch.count} clips uploaded`} — encoding now
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {mb(batch.bytes)} MB in {formatSeconds(batch.seconds)}. They appear in Videos when ready — label them
+            there while they encode.
+          </p>
+          <p className="mt-2 text-sm">
+            <Link to="/videos" className="font-medium text-zinc-200 underline underline-offset-2">
+              View videos
+            </Link>
+          </p>
         </Card>
       )}
 
@@ -297,7 +491,7 @@ export function UploadPage() {
                 </p>
               )}
 
-              {items.length === 0 && queue.length === 0 && (
+              {items.length === 0 && queue.length === 0 && !batch && (
                 <Card>
                   <Muted>No drafts — everything you uploaded is published.</Muted>
                   <p className="mt-2 text-sm">
@@ -329,7 +523,7 @@ export function UploadPage() {
                 </button>
               )}
 
-              {items.length === 0 && queue.length > 0 && busy && <Muted className="text-center">Working…</Muted>}
+              
             </>
           )
         }}
