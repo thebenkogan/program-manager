@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProgramResponse, VideoItem, VideosResponse } from '../shared/api'
+import { SpeedMeter, totalLoadedBytes } from '../shared/upload-progress'
 import { apiPost, endpoints, useFetch } from './api'
 import { Card, Loaded, Muted, PageTitle, cn } from './components'
 import { Link } from './router'
@@ -10,8 +11,8 @@ const CHUNK = 8 * 1024 * 1024
 /** Chunks in flight at once. 8 x 8 MB = 64 MB of the file in flight. */
 const CONCURRENCY = 8
 const MAX_RETRIES = 3
-/** Speed averaging window: long enough to smooth 8 MB chunk bursts, short enough to react. */
-const SPEED_WINDOW_MS = 5000
+/** How often loaded bytes are sampled into the speed meter and flushed to the UI. */
+const TICK_MS = 250
 
 type Phase = 'waiting' | 'uploading' | 'finishing' | 'uploaded' | 'error'
 
@@ -19,7 +20,7 @@ interface QueueItem {
   key: string
   file: File
   phase: Phase
-  /** Bytes the server has acknowledged. */
+  /** Bytes loaded so far: server-acknowledged plus still in flight. */
   sent: number
   startedAt: number | null
   finishedAt: number | null
@@ -27,16 +28,34 @@ interface QueueItem {
   videoId?: string
 }
 
-/** A chunk acknowledgement, used to measure throughput over a rolling window. */
-interface Sample {
-  t: number
-  b: number
-}
-
 interface BatchSummary {
   count: number
   bytes: number
   seconds: number
+}
+
+/**
+ * PUT a chunk via XHR. `fetch` has no upload-progress events, which is why
+ * progress used to move only on 8 MB chunk acks; `xhr.upload.onprogress`
+ * reports byte-level loaded counts for the chunk in flight.
+ */
+function xhrPut(
+  url: string,
+  body: Blob,
+  onProgress: (loaded: number) => void,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded)
+    }
+    xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText })
+    xhr.onerror = () => reject(new Error('network error'))
+    xhr.onabort = () => reject(new Error('network error'))
+    xhr.send(body)
+  })
 }
 
 function mb(bytes: number): string {
@@ -53,21 +72,6 @@ function formatSeconds(seconds: number): string {
   return `${Math.floor(seconds / 60)}m ${String(Math.round(seconds % 60)).padStart(2, '0')}s`
 }
 
-function speedOf(item: QueueItem, samples: Map<string, Sample[]>): number {
-  if (item.phase !== 'uploading' || item.startedAt === null || item.sent === 0) return 0
-  const now = performance.now()
-  const list = (samples.get(item.key) ?? []).filter((s) => now - s.t <= SPEED_WINDOW_MS)
-  const first = list[0]
-  const last = list[list.length - 1]
-  if (first && last) {
-    const span = (last.t - first.t) / 1000
-    if (span >= 0.5) return (last.b - first.b) / span
-  }
-  // Not enough of a window yet (or chunks are still landing): average since start.
-  const elapsed = (now - item.startedAt) / 1000
-  return elapsed > 0.4 ? item.sent / elapsed : 0
-}
-
 /** Upload + label. Clips publish on their own as soon as encoding finishes. */
 export function UploadPage() {
   const [queue, setQueue] = useState<QueueItem[]>([])
@@ -76,17 +80,52 @@ export function UploadPage() {
   const [limit, setLimit] = useState(24)
   const [playing, setPlaying] = useState<VideoItem | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const samples = useRef(new Map<string, Sample[]>())
+  // Byte-level progress lives in refs updated by XHR events; the 250 ms tick
+  // samples it into the meters and flushes it to state, so renders are not
+  // driven by every progress event from 8 parallel chunks.
+  const meters = useRef(new Map<string, SpeedMeter>())
+  const batchMeter = useRef(new SpeedMeter())
+  const loadedBytes = useRef(new Map<string, number>())
+  const acknowledgedBytes = useRef(new Map<string, number>())
+  const inFlightBytes = useRef(new Map<string, Map<number, number>>())
+  const queueRef = useRef<QueueItem[]>([])
   const batchTimer = useRef<number | null>(null)
   const drafts = useFetch<VideosResponse>(`${endpoints.videos}?status=all`)
   const program = useFetch<ProgramResponse>(endpoints.program)
 
-  // Chunk acknowledgements only arrive every 8 MB, so tick the clock while
-  // uploading to keep MB/s and the ETA moving between acknowledges.
+  useEffect(() => {
+    queueRef.current = queue
+  }, [queue])
+
+  // Sample loaded bytes on a fixed tick while uploading, then re-render.
+  // Dense samples are what make the windowed rate smooth: each step is
+  // 250 ms of traffic, not an 8 MB chunk ack.
   const [, setTick] = useState(0)
   useEffect(() => {
     if (!busy) return
-    const timer = setInterval(() => setTick((n) => n + 1), 500)
+    const timer = setInterval(() => {
+      const now = performance.now()
+      let batchSent = 0
+      let uploading = false
+      for (const item of queueRef.current) {
+        const bytes = loadedBytes.current.get(item.key) ?? item.sent
+        batchSent += bytes
+        if (item.phase === 'uploading') {
+          uploading = true
+          meters.current.get(item.key)?.addSample(now, bytes)
+        }
+      }
+      if (uploading) batchMeter.current.addSample(now, batchSent)
+      setQueue((items) =>
+        items.map((item) => {
+          const bytes = loadedBytes.current.get(item.key)
+          return bytes !== undefined && bytes > item.sent
+            ? { ...item, sent: bytes }
+            : item
+        }),
+      )
+      setTick((n) => n + 1)
+    }, TICK_MS)
     return () => clearInterval(timer)
   }, [busy])
 
@@ -107,8 +146,14 @@ export function UploadPage() {
 
   const totalBytes = queue.reduce((sum, i) => sum + i.file.size, 0)
   const sentBytes = queue.reduce((sum, i) => sum + i.sent, 0)
-  const speed = queue.reduce((sum, i) => sum + speedOf(i, samples.current), 0)
-  const remainingSeconds = speed > 0 ? (totalBytes - sentBytes) / speed : 0
+  const speed = batchMeter.current.speed()
+  // ETA is null until the meter has ~2 s of steady data; show speed alone
+  // until then rather than a wildly wrong countdown.
+  const batchEta = batchMeter.current.etaSeconds(
+    totalBytes,
+    sentBytes,
+    performance.now(),
+  )
 
   // Transcodes finish on the server in under a couple of minutes. Poll while any
   // clip is still encoding so the card disappears (published) on its own instead
@@ -137,7 +182,12 @@ export function UploadPage() {
       const set = (patch: Partial<QueueItem>) =>
         setQueue((items) => items.map((i) => (i.key === key ? { ...i, ...patch } : i)))
       const startedAt = performance.now()
-      samples.current.set(key, [{ t: startedAt, b: 0 }])
+      const meter = new SpeedMeter()
+      meter.addSample(startedAt, 0)
+      meters.current.set(key, meter)
+      loadedBytes.current.set(key, 0)
+      acknowledgedBytes.current.set(key, 0)
+      inFlightBytes.current.set(key, new Map())
       set({ phase: 'uploading', startedAt })
       try {
         const created = await apiPost<{ uploadId: string }>('/api/uploads', {
@@ -147,29 +197,48 @@ export function UploadPage() {
 
         // Chunks run in parallel. The server writes each at its own offset and
         // tracks received ranges, so order does not matter and a retried chunk is
-        // harmless. Progress counts bytes the server acknowledged.
+        // harmless. Progress is acknowledged bytes plus bytes still in flight,
+        // fed by XHR progress events — never just the ack lumps.
         const offsets: number[] = []
         for (let offset = 0; offset < file.size; offset += CHUNK) offsets.push(offset)
         let acknowledged = 0
         let nextOffset = 0
+        const updateLoaded = () => {
+          const total = totalLoadedBytes(
+            acknowledged,
+            inFlightBytes.current.get(key)?.values() ?? [],
+          )
+          const prev = loadedBytes.current.get(key) ?? 0
+          if (total > prev) loadedBytes.current.set(key, total)
+          return total
+        }
         const send = async (offset: number) => {
           const end = Math.min(offset + CHUNK, file.size)
           for (let attempt = 0; ; attempt++) {
-            let res: Response
+            let res: { status: number; text: string }
             try {
-              res = await fetch(`/api/uploads/${created.uploadId}/chunk?offset=${offset}`, {
-                method: 'PUT',
-                body: file.slice(offset, end),
-                credentials: 'same-origin',
-              })
+              inFlightBytes.current.get(key)?.set(offset, 0)
+              res = await xhrPut(
+                `/api/uploads/${created.uploadId}/chunk?offset=${offset}`,
+                file.slice(offset, end),
+                (loadedInChunk) => {
+                  inFlightBytes.current.get(key)?.set(offset, loadedInChunk)
+                  updateLoaded()
+                },
+              )
             } catch (error) {
               // Network blip: back off and retry the same chunk (writes are idempotent).
               if (attempt >= MAX_RETRIES) throw error
               await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
               continue
             }
-            if (res.ok) break
-            const body = (await res.json().catch(() => ({}))) as { error?: string }
+            if (res.status >= 200 && res.status < 300) break
+            let body: { error?: string } = {}
+            try {
+              body = JSON.parse(res.text) as { error?: string }
+            } catch {
+              body = {}
+            }
             // 5xx is worth retrying; 4xx means the request itself is wrong.
             if (res.status >= 500 && attempt < MAX_RETRIES) {
               await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
@@ -178,12 +247,9 @@ export function UploadPage() {
             throw new Error(body.error ?? `chunk ${res.status}`)
           }
           acknowledged += end - offset
-          const list = samples.current.get(key) ?? []
-          list.push({ t: performance.now(), b: acknowledged })
-          // Keep the window small; twenty samples is plenty for any chunk count.
-          if (list.length > 20) list.splice(0, list.length - 20)
-          samples.current.set(key, list)
-          set({ sent: acknowledged })
+          acknowledgedBytes.current.set(key, acknowledged)
+          inFlightBytes.current.get(key)?.delete(offset)
+          set({ sent: updateLoaded() })
         }
         const worker = async () => {
           while (nextOffset < offsets.length) {
@@ -204,7 +270,7 @@ export function UploadPage() {
         const body = (await done.json().catch(() => ({}))) as { videoId?: string; error?: string }
         if (done.status === 409 && body.error === 'duplicate') throw new Error('This clip is already in your library')
         if (!done.ok || !body.videoId) throw new Error(body.error ?? 'could not finish upload')
-        set({ phase: 'uploaded', sent: file.size, videoId: body.videoId, finishedAt: Date.now() })
+        set({ phase: 'uploaded', sent: file.size, videoId: body.videoId, finishedAt: performance.now() })
         drafts.reload()
         return true
       } catch (error) {
@@ -230,7 +296,11 @@ export function UploadPage() {
       startedAt: null,
       finishedAt: null,
     }))
-    samples.current.clear()
+    meters.current.clear()
+    loadedBytes.current.clear()
+    acknowledgedBytes.current.clear()
+    inFlightBytes.current.clear()
+    batchMeter.current = new SpeedMeter()
     setQueue(items)
     setBusy(true)
     const began = performance.now()
@@ -339,8 +409,8 @@ export function UploadPage() {
               <span className="tabular-nums">
                 {speed > 0 ? (
                   <>
-                    <span className="font-semibold text-zinc-100">{mbps(speed)}</span> · ~
-                    {formatSeconds(remainingSeconds)} left
+                    <span className="font-semibold text-zinc-100">{mbps(speed)}</span>
+                    {batchEta !== null && <> · ~{formatSeconds(batchEta)} left</>}
                   </>
                 ) : (
                   'starting…'
@@ -357,7 +427,17 @@ export function UploadPage() {
                       ? Math.round((item.sent / item.file.size) * 100)
                       : 0
                     : 100
-                const itemSpeed = speedOf(item, samples.current)
+                const itemMeter = meters.current.get(item.key)
+                const itemSpeed =
+                  item.phase === 'uploading' ? (itemMeter?.speed() ?? 0) : 0
+                const itemEta =
+                  item.phase === 'uploading' && itemMeter
+                    ? itemMeter.etaSeconds(
+                        item.file.size,
+                        item.sent,
+                        performance.now(),
+                      )
+                    : null
                 const elapsed =
                   item.startedAt !== null && item.finishedAt !== null
                     ? (item.finishedAt - item.startedAt) / 1000
@@ -375,7 +455,7 @@ export function UploadPage() {
                     <div className="mt-1 h-1 overflow-hidden rounded bg-zinc-800">
                       <div
                         className={cn(
-                          'h-full transition-[width] duration-300',
+                          'h-full transition-[width] duration-200 ease-linear',
                           item.phase === 'error'
                             ? 'bg-red-500'
                             : item.phase === 'uploaded'
@@ -407,8 +487,8 @@ export function UploadPage() {
                       </span>
                       <span className="shrink-0">
                         {item.phase === 'uploading' &&
-                          itemSpeed > 0 &&
-                          `~${formatSeconds((item.file.size - item.sent) / itemSpeed)} left`}
+                          itemEta !== null &&
+                          `~${formatSeconds(itemEta)} left`}
                         {item.phase === 'uploaded' && formatSeconds(elapsed)}
                       </span>
                     </div>
