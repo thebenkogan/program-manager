@@ -12,12 +12,60 @@ const PORT = Number(process.env.PORT ?? 3000)
 
 const SPA_PATHS = /^\/(invite\/[^/]+|signin|program|progress|videos|label|upload)?\/?$/
 
-async function serveStatic(pathname: string): Promise<Response | null> {
+// A year is only safe for content-hashed filenames: the name changes when the
+// bytes do, so a cached copy can never be wrong.
+const IMMUTABLE = 'public, max-age=31536000, immutable'
+// HTML is the one file that must never be reused blind: a stale index.html pins
+// the whole SPA to the old bundle for as long as its freshness lasts (Cloudflare
+// fills in max-age=14400 where the origin is silent), and an open tab that never
+// re-reads it keeps running that bundle indefinitely.
+const REVALIDATE = 'no-cache'
+
+function cacheControl(pathname: string): string {
+  return pathname.startsWith('/assets/') ? IMMUTABLE : REVALIDATE
+}
+
+/** ETag from size + mtime: cheap, and changes whenever the file on disk does. */
+function etagFor(file: ReturnType<typeof Bun.file>): string {
+  return `W/"${file.size}-${Math.floor(file.lastModified)}"`
+}
+
+/** The entry bundle the server is currently serving — i.e. this deployment's build id. */
+let appVersion: string | null | undefined
+async function version(): Promise<string | null> {
+  if (appVersion !== undefined) return appVersion
+  try {
+    const html = await Bun.file(path.join(DIST, 'index.html')).text()
+    appVersion = /assets\/(index-[^"']+\.js)/.exec(html)?.[1] ?? null
+  } catch {
+    appVersion = null
+  }
+  return appVersion
+}
+
+async function serveStatic(request: Request, pathname: string): Promise<Response | null> {
   if (pathname === '/') return null
   const file = path.join(DIST, pathname)
   if (!file.startsWith(DIST + path.sep)) return null
   const f = Bun.file(file)
-  return (await f.exists()) ? new Response(f) : null
+  if (!(await f.exists())) return null
+  const headers = new Headers({ 'cache-control': cacheControl(pathname) })
+  const etag = etagFor(f)
+  headers.set('etag', etag)
+  // Revalidation is the point of `no-cache`; answer it with an empty 304 rather
+  // than re-sending the file.
+  if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers })
+  return new Response(f, { headers })
+}
+
+/** The SPA shell: always revalidated, so a deploy is picked up on the next load. */
+async function htmlResponse(request: Request, file: string): Promise<Response> {
+  const f = Bun.file(file)
+  const headers = new Headers({ 'content-type': 'text/html; charset=utf-8', 'cache-control': REVALIDATE })
+  const etag = etagFor(f)
+  headers.set('etag', etag)
+  if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers })
+  return new Response(f, { headers })
 }
 
 // Applied to every response the origin sends. Cloudflare passes these through.
@@ -53,6 +101,11 @@ Bun.serve({
 async function route(request: Request): Promise<Response> {
   const url = new URL(request.url)
   try {
+    // Public and unauthenticated: it is only a build id, and the sign-in page
+    // needs it too.
+    if (url.pathname === '/api/version') {
+      return Response.json({ version: await version() }, { headers: { 'cache-control': 'no-store' } })
+    }
     const auth = await handleAuthRoutes(request)
     if (auth) return auth
     const api = await handleApi(request, getClientId)
@@ -63,10 +116,10 @@ async function route(request: Request): Promise<Response> {
     if (videos) return videos
     if (url.pathname.startsWith('/api/')) return Response.json({ error: 'not_found' }, { status: 404 })
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405 })
-    const asset = await serveStatic(url.pathname)
+    const asset = await serveStatic(request, url.pathname)
     if (asset) return asset
     if (SPA_PATHS.test(url.pathname) || url.pathname.startsWith('/invite/')) {
-      return new Response(Bun.file(path.join(DIST, 'index.html')), { headers: { 'content-type': 'text/html; charset=utf-8' } })
+      return htmlResponse(request, path.join(DIST, 'index.html'))
     }
     return new Response('Not found', { status: 404 })
   } catch (err) {

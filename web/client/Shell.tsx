@@ -4,6 +4,7 @@ import { setSessionHint } from './session-hint'
 import { Link, navigate, usePathname } from './router'
 import { cn } from './components'
 import { useFetch, endpoints, type MeResponse } from './api'
+import { useStaleApp } from './use-app-version'
 
 const tabs = [
   { to: '/', label: 'Next' },
@@ -16,6 +17,7 @@ const tabs = [
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname()
   const me = useFetch<MeResponse>(endpoints.me)
+  const stale = useStaleApp()
   const [signingOut, setSigningOut] = useState(false)
 
   async function signOut() {
@@ -48,7 +50,21 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-md space-y-4 px-4 pt-5">{children}</main>
+      <main className="mx-auto max-w-md space-y-4 px-4 pt-5">
+        {stale && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <span>Update ready</span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="shrink-0 cursor-pointer rounded border border-amber-500/50 px-2 py-1 font-semibold text-amber-100 hover:bg-amber-500/20"
+            >
+              Reload
+            </button>
+          </div>
+        )}
+        {children}
+      </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur">
         <ul className="mx-auto grid max-w-md grid-cols-4">
